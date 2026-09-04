@@ -1,0 +1,430 @@
+import { useState, useEffect } from 'react'
+import { useMap } from '../hooks/useMap'
+import { useDemProfile, useSearchZones, useRestPoints, useRunoff, useSlopeAnalysis, useAnomalyAnalysis, useExport, useWater, useSentinel, useImportKml } from '../hooks/useAnalysis'
+import { setAnalysisResults } from './MapOverlays'
+import type { LngLat, TripParams } from '@shared/types'
+import { computeBounds } from '@shared/types'
+
+interface AnalysisPanelProps {
+  tripParams: TripParams
+}
+
+/**
+ * Analysis panel — sidebar controls to run each analysis type.
+ *
+ * Model:
+ *  - Selection (bbox/polygon) = the search area boundary. Analysis runs within it.
+ *  - LKP = Last Known Point, placed by right-click on map.
+ *    Falls back to map center if no pin placed.
+ *  - TripParams = timeframe + hike parameters that drive all models.
+ *  - Line = for elevation profiles (not area-based).
+ */
+export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
+  const { selection, map, lkp } = useMap()
+  const profileHook = useDemProfile()
+  const zonesHook = useSearchZones()
+  const restHook = useRestPoints()
+  const runoffHook = useRunoff()
+  const slopeHook = useSlopeAnalysis()
+  const anomalyHook = useAnomalyAnalysis()
+  const exportHook = useExport()
+  const waterHook = useWater()
+  const sentinelHook = useSentinel()
+  const importHook = useImportKml()
+  const [rainfallMm, setRainfallMm] = useState(50)
+  const [activityProfile, setActivityProfile] = useState<'hiking' | 'scrambling' | 'sar'>('hiking')
+  const [gibsLayerId, setGibsLayerId] = useState('modis-true-color')
+
+  // Reset all analysis state when "Clear Map" is pressed
+  useEffect(() => {
+    const handler = () => {
+      profileHook.clear()
+      zonesHook.clear()
+      restHook.clear()
+      runoffHook.clear()
+      slopeHook.clear()
+      anomalyHook.clear()
+      waterHook.clear()
+      sentinelHook.clear()
+      importHook.clear()
+    }
+    window.addEventListener('terrain:clear-all', handler)
+    return () => window.removeEventListener('terrain:clear-all', handler)
+  }, [])
+
+  const hasLine = selection?.type === 'line' && selection.coords.length >= 2
+  const hasArea = (selection?.type === 'bbox' || selection?.type === 'polygon') && selection.coords.length >= 3
+
+  // LKP: use placed pin, or fall back to map center
+  const getLkp = (): LngLat => {
+    if (lkp) return lkp
+    if (map) {
+      const c = map.getCenter()
+      return { lng: c.lng, lat: c.lat }
+    }
+    return { lng: 0, lat: 0 }
+  }
+
+  const runProfile = async () => {
+    if (!hasLine || !selection) return
+    await profileHook.run({ coords: selection.coords })
+  }
+
+  const runZones = async () => {
+    const lkpPoint = getLkp()
+    const res = await zonesHook.run({ lkp: lkpPoint, radii: [500, 1000, 3000, 5000], tripParams })
+    if (res) setAnalysisResults({ zones: res })
+  }
+
+  const runRestPoints = async () => {
+    const lkpPoint = getLkp()
+    const res = await restHook.run({ lkp: lkpPoint, maxHours: tripParams.hoursSinceLastSeen, tripParams })
+    if (res) setAnalysisResults({ restPoints: res })
+  }
+
+  const getBounds = (): [LngLat, LngLat] | null => {
+    if (!selection || selection.coords.length < 2) return null
+    return computeBounds(selection.coords)
+  }
+
+  const runRunoff = async () => {
+    const bounds = getBounds()
+    if (!bounds) return
+    const res = await runoffHook.run({ bounds, rainfallMm })
+    if (res) setAnalysisResults({ runoff: res })
+  }
+
+  const runSlope = async () => {
+    const bounds = getBounds()
+    if (!bounds) return
+    const res = await slopeHook.run({ bounds, profile: activityProfile })
+    if (res) setAnalysisResults({ slope: res })
+  }
+
+  const runAnomaly = async () => {
+    const bounds = getBounds()
+    if (!bounds) return
+    const res = await anomalyHook.run({ bounds })
+    if (res) setAnalysisResults({ anomaly: res })
+  }
+
+  const runWater = async () => {
+    const bounds = getBounds()
+    if (!bounds) return
+    const res = await waterHook.run({ bounds })
+    if (res) setAnalysisResults({ water: res })
+  }
+
+  const runSentinel = async () => {
+    const bounds = getBounds()
+    if (!bounds) return
+    const res = await sentinelHook.run({ bounds, layerId: gibsLayerId })
+    if (res && res.best) {
+      setAnalysisResults({ sentinel: {
+        tileUrl: res.best.tileUrl,
+        id: res.best.id,
+      } })
+    }
+  }
+
+  const runImport = async () => {
+    const res = await importHook.run()
+    if (res) {
+      setAnalysisResults({ imported: { features: res.features } })
+      // Fly to the imported area
+      if (map && res.features.length > 0) {
+        const [sw, ne] = res.bounds
+        map.fitBounds([[sw.lng, sw.lat], [ne.lng, ne.lat]], { padding: 50, duration: 2000 })
+      }
+    }
+  }
+
+  const doExportGeoJSON = async () => {
+    await exportHook.exportGeoJSON(currentResults())
+  }
+
+  const doExportKML = async () => {
+    await exportHook.exportKML(currentResults())
+  }
+
+  const doExportPng = async () => {
+    await window.terrain.exportPng()
+  }
+
+  // Collect all current analysis results for export
+  const currentResults = (): Record<string, unknown> => {
+    const r: Record<string, unknown> = {}
+    if (zonesHook.zones) r.zones = zonesHook.zones
+    if (restHook.points) r.restPoints = restHook.points
+    if (runoffHook.result) r.runoff = runoffHook.result
+    if (slopeHook.result) r.slope = slopeHook.result
+    if (anomalyHook.result) r.anomaly = anomalyHook.result
+    return r
+  }
+
+  return (
+    <section className="panel analysis-panel">
+      <h2>Analysis</h2>
+
+      {/* LKP status */}
+      <div className="lkp-status">
+        <span className={lkp ? 'active' : 'muted'}>
+          {lkp ? `LKP: ${lkp.lng.toFixed(4)}, ${lkp.lat.toFixed(4)}` : 'No LKP pin — right-click to place'}
+        </span>
+        {!hasArea && (
+          <p className="analysis-hint muted">
+            Draw a bounding box or polygon to define the search area.
+          </p>
+        )}
+      </div>
+
+      {/* Elevation profile */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span className={hasLine ? '' : 'muted'}>Elevation Profile</span>
+          <button
+            className="run-btn"
+            onClick={runProfile}
+            disabled={!hasLine || profileHook.loading}
+          >
+            {profileHook.loading ? '...' : 'Run'}
+          </button>
+        </div>
+        <p className="analysis-hint muted">Draw a line, then run</p>
+        {profileHook.error && <p className="analysis-error">{profileHook.error}</p>}
+      </div>
+
+      {/* Search zones */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span>Search Zones</span>
+          <button
+            className="run-btn"
+            onClick={runZones}
+            disabled={zonesHook.loading}
+          >
+            {zonesHook.loading ? '...' : 'Run'}
+          </button>
+        </div>
+        <p className="analysis-hint muted">
+          Auto-rings from {lkp ? 'LKP pin' : 'map center'} based on {tripParams.pace} pace, {tripParams.weather} weather
+        </p>
+        {zonesHook.error && <p className="analysis-error">{zonesHook.error}</p>}
+        {zonesHook.zones && (
+          <p className="analysis-result">
+            {zonesHook.zones.zones.length} zones generated
+          </p>
+        )}
+      </div>
+
+      {/* Rest points */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span>Likely Rest Points</span>
+          <button
+            className="run-btn"
+            onClick={runRestPoints}
+            disabled={restHook.loading}
+          >
+            {restHook.loading ? '...' : 'Run'}
+          </button>
+        </div>
+        <p className="analysis-hint muted">
+          Within {tripParams.hoursSinceLastSeen}h walk of {lkp ? 'LKP pin' : 'map center'} ({tripParams.experience})
+        </p>
+        {restHook.error && <p className="analysis-error">{restHook.error}</p>}
+        {restHook.points && (
+          <p className="analysis-result">
+            {restHook.points.points.length} candidates found
+          </p>
+        )}
+      </div>
+
+      {/* Rainfall runoff */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span className={hasArea ? '' : 'muted'}>Rainfall Runoff</span>
+          <button
+            className="run-btn"
+            onClick={runRunoff}
+            disabled={!hasArea || runoffHook.loading}
+          >
+            {runoffHook.loading ? '...' : 'Run'}
+          </button>
+        </div>
+        <div className="rainfall-slider">
+          <label className="param-label">Rainfall: {rainfallMm}mm</label>
+          <input
+            type="range"
+            min={0}
+            max={200}
+            value={rainfallMm}
+            onChange={(e) => setRainfallMm(parseInt(e.target.value))}
+            className="param-slider"
+          />
+          <div className="slider-ticks">
+            <span>0</span>
+            <span>50</span>
+            <span>100</span>
+            <span>200mm</span>
+          </div>
+        </div>
+        <p className="analysis-hint muted">Flow paths, pooling, flood risk, watersheds</p>
+        {runoffHook.error && <p className="analysis-error">{runoffHook.error}</p>}
+        {runoffHook.result && (
+          <p className="analysis-result">
+            {runoffHook.result.flowPaths.length} flows, {runoffHook.result.poolingAreas.length} pools, {runoffHook.result.floodRiskZones.length} flood zones
+          </p>
+        )}
+      </div>
+
+      {/* Slope analysis */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span className={hasArea ? '' : 'muted'}>Slope Analysis</span>
+          <button className="run-btn" onClick={runSlope} disabled={!hasArea || slopeHook.loading}>
+            {slopeHook.loading ? '...' : 'Run'}
+          </button>
+        </div>
+        <div className="btn-group" style={{ marginTop: '4px' }}>
+          {(['hiking', 'scrambling', 'sar'] as const).map((p) => (
+            <button
+              key={p}
+              className={'opt-btn ' + (activityProfile === p ? 'active' : '')}
+              onClick={() => setActivityProfile(p)}
+            >
+              {p === 'sar' ? 'SAR' : p}
+            </button>
+          ))}
+        </div>
+        <p className="analysis-hint muted">Hillshade + impassable bands (Horn's method)</p>
+        {slopeHook.error && <p className="analysis-error">{slopeHook.error}</p>}
+        {slopeHook.result && (
+          <>
+            <p className="analysis-result">
+              {slopeHook.result.bands.length} slope bands found
+            </p>
+            <div className="slope-legend">
+              {slopeHook.result.legend.map((l) => (
+                <div key={l.deg} className="legend-item">
+                  <span className="legend-swatch" style={{ background: l.color }} />
+                  <span className="legend-label">{l.label}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Terrain anomalies */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span className={hasArea ? '' : 'muted'}>Terrain Anomalies</span>
+          <button className="run-btn" onClick={runAnomaly} disabled={!hasArea || anomalyHook.loading}>
+            {anomalyHook.loading ? '...' : 'Run'}
+          </button>
+        </div>
+        <p className="analysis-hint muted">Depressions + prominences (caves, sinkholes, ridges)</p>
+        {anomalyHook.error && <p className="analysis-error">{anomalyHook.error}</p>}
+        {anomalyHook.result && (
+          <p className="analysis-result">
+            {anomalyHook.result.zones.length} anomalies found
+          </p>
+        )}
+      </div>
+
+      {/* Water features */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span className={hasArea ? '' : 'muted'}>Water Features</span>
+          <button className="run-btn" onClick={runWater} disabled={!hasArea || waterHook.loading}>
+            {waterHook.loading ? '...' : 'Show'}
+          </button>
+        </div>
+        <p className="analysis-hint muted">OSM streams, lakes, springs (Overpass API)</p>
+        {waterHook.error && <p className="analysis-error">{waterHook.error}</p>}
+        {waterHook.result && (
+          <p className="analysis-result">
+            {waterHook.result.features.length} water features
+          </p>
+        )}
+      </div>
+
+      {/* Satellite imagery (NASA GIBS) */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span className={hasArea ? '' : 'muted'}>Satellite Imagery</span>
+          <button className="run-btn" onClick={runSentinel} disabled={!hasArea || sentinelHook.loading}>
+            {sentinelHook.loading ? '...' : 'Show'}
+          </button>
+        </div>
+        <select
+          className="analysis-select"
+          value={gibsLayerId}
+          onChange={(e) => setGibsLayerId(e.target.value)}
+        >
+          {sentinelHook.result?.layers?.length
+            ? sentinelHook.result.layers.map((l) => (
+                <option key={l.id} value={l.id}>{l.name} ({l.temporalResolution})</option>
+              ))
+            : <option value="modis-true-color">MODIS True Color (Daily)</option>
+          }
+        </select>
+        <p className="analysis-hint muted">NASA GIBS — stable tiles, no scene IDs, no 404s</p>
+        {sentinelHook.error && <p className="analysis-error">{sentinelHook.error}</p>}
+        {sentinelHook.result && sentinelHook.result.best && (
+          <p className="analysis-result">
+            {sentinelHook.result.layers.length} layers available. Showing: {sentinelHook.result.best.id}, {sentinelHook.result.best.date}
+          </p>
+        )}
+      </div>
+
+      {/* Import KML/KMZ */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span>Import Project</span>
+          <button className="run-btn" onClick={runImport} disabled={importHook.loading}>
+            {importHook.loading ? '...' : 'Open'}
+          </button>
+        </div>
+        <p className="analysis-hint muted">Load KML/KMZ from Google Earth (waypoints, tracks, polygons)</p>
+        {importHook.error && <p className="analysis-error">{importHook.error}</p>}
+        {importHook.result && (
+          <p className="analysis-result">
+            {importHook.result.fileName}: {importHook.result.featureCount} features loaded
+          </p>
+        )}
+      </div>
+
+      {/* Export */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span>Export Results</span>
+        </div>
+        <div className="btn-group" style={{ marginTop: '4px' }}>
+          <button
+            className="opt-btn"
+            onClick={doExportGeoJSON}
+            disabled={exportHook.exporting}
+          >
+            {exportHook.exporting ? '...' : 'GeoJSON'}
+          </button>
+          <button
+            className="opt-btn"
+            onClick={doExportKML}
+            disabled={exportHook.exporting}
+          >
+            {exportHook.exporting ? '...' : 'KML'}
+          </button>
+          <button
+            className="opt-btn"
+            onClick={doExportPng}
+          >
+            PNG
+          </button>
+        </div>
+        <p className="analysis-hint muted">Export all analysis layers for QGIS / Google Earth / screenshot</p>
+      </div>
+    </section>
+  )
+}

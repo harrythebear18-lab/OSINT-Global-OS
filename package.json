@@ -1,0 +1,72 @@
+{
+  "name": "osint-global-os",
+  "version": "0.1.0",
+  "description": "Unified global monitoring platform — terrain analysis, weather/climate, seismic, wildfires, aircraft, grid, network, and prediction engine on a MapLibre base.",
+  "main": "out/main/index.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "node scripts/dev.cjs",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --win",
+    "dist:dir": "electron-vite build && electron-builder --win --dir"
+  },
+  "build": {
+    "appId": "com.osintglobalos.app",
+    "productName": "OSINT Global OS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
+    "win": {
+      "icon": "resources/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "dependencies": {
+    "@turf/turf": "^7.1.0",
+    "@types/pngjs": "^6.0.5",
+    "@types/xmldom": "^0.1.34",
+    "@xmldom/xmldom": "^0.9.12",
+    "adm-zip": "^0.5.16",
+    "geotiff": "^2.1.3",
+    "maplibre-gl": "^4.7.1",
+    "pngjs": "^7.0.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "cross-env": "^10.1.0",
+    "electron": "^32.1.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}
