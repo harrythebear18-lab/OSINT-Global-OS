@@ -6,7 +6,7 @@
 
 ## Status
 
-**Alpha — functional and usable.** Core SAR analysis pipeline, global OSINT overlays, climate integrity verification, and 7-model prediction engine are live.
+**v1.0.0 — stable release.** Core SAR analysis pipeline, global OSINT overlays, climate integrity verification, 7-model prediction engine, road-aware routing, and multi-box analysis are live.
 
 ## What It Does
 
@@ -153,7 +153,13 @@ All data sources are **free and keyless**. No API keys are required for any feat
 
 ## Getting Started
 
+### From source
+
 ```bash
+# clone the repo
+git clone https://github.com/harrythebear18-lab/OSINT-Global-OS.git
+cd OSINT-Global-OS
+
 # install deps
 npm install
 
@@ -163,7 +169,7 @@ npm run dev
 # typecheck
 npm run typecheck
 
-# production build
+# production build (compiles to out/)
 npm run build
 
 # launch built app
@@ -171,6 +177,26 @@ npm run preview
 ```
 
 Requires Node 18+ (developed on Node 24).
+
+### Build a Windows installer
+
+```bash
+npm run dist
+```
+
+This runs `electron-vite build` + `electron-builder --win` and produces an NSIS installer in `release/`. Double-click the installer to install like any normal Windows app.
+
+For a portable (no-install) build:
+```bash
+npm run dist:dir
+```
+
+### Branch structure
+
+- **`main`** — stable release branch, tagged with version numbers
+- **`develop`** — ongoing development work
+
+To contribute, branch off `develop`, make changes, and open a PR back to `develop`.
 
 ## How to Use
 
