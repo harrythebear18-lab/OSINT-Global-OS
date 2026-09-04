@@ -37,25 +37,24 @@ import type {
 } from '@shared/types'
 import { demService } from './dem-service'
 import { lngLatToTile, DEFAULT_ZOOM } from './dem-tiles'
+import { computeOptimalZoom } from './dem-zoom'
 import { deriveTripParams } from './trip-params'
 import { calibrateHiker, assessClaimCredibility, maxReachRadius } from './hiker-profile'
+import { fetchRoads, rasterizeRoads } from './road-service'
 import { isWithinBounds } from '@shared/types'
 
-/** Load DEM grid covering the bounding box (reused from runoff-service pattern). */
+/** Load DEM grid covering the bounding box (auto-zoom for large areas). */
 async function loadDemGrid(
   bounds: [LngLat, LngLat],
   zoom: number,
 ): Promise<{ grid: (number | null)[][]; width: number; height: number; cellSizeM: number; swLng: number; neLat: number; lngStep: number; latStep: number }> {
+  // Auto-reduce zoom for large areas instead of throwing an error
+  const effectiveZoom = computeOptimalZoom(bounds, zoom, 32)
   const [sw, ne] = bounds
-  const minTile = lngLatToTile(sw.lng, ne.lat, zoom)
-  const maxTile = lngLatToTile(ne.lng, sw.lat, zoom)
+  const minTile = lngLatToTile(sw.lng, ne.lat, effectiveZoom)
+  const maxTile = lngLatToTile(ne.lng, sw.lat, effectiveZoom)
   const tilesX = maxTile.x - minTile.x + 1
   const tilesY = maxTile.y - minTile.y + 1
-
-  // Cap grid size to avoid memory/performance issues
-  if (tilesX > 8 || tilesY > 8) {
-    throw new Error('Analysis area too large. Please zoom in or draw a smaller bounding box.')
-  }
 
   const tileGrids: (number | null)[][][][] = []
   let firstTileW = 0
@@ -64,7 +63,7 @@ async function loadDemGrid(
   for (let ty = 0; ty < tilesY; ty++) {
     tileGrids[ty] = []
     for (let tx = 0; tx < tilesX; tx++) {
-      const tile = await demService.loadTile(minTile.x + tx, minTile.y + ty, zoom)
+      const tile = await demService.loadTile(minTile.x + tx, minTile.y + ty, effectiveZoom)
       tileGrids[ty][tx] = tile.grid
       if (ty === 0 && tx === 0) {
         firstTileW = tile.width
@@ -189,6 +188,8 @@ function movementCost(
   impassableSlopeDeg: number,
   noise: number = 0,
   preference: RoutePreference = 'least-effort',
+  roadGrid?: Float32Array | null,
+  width?: number,
 ): number {
   const e1 = grid[y1]?.[x1]
   const e2 = grid[y2]?.[x2]
@@ -218,6 +219,19 @@ function movementCost(
 
   // Noise for alternative routes
   const noiseCost = noise * dist * (0.3 + Math.random() * 0.7)
+
+  // ── Road preference ──
+  // If a road/trail passes through the destination cell, the cost is
+  // multiplied by the road's cost multiplier (0.15-0.50). This makes
+  // A* strongly prefer following roads in urban/countryside areas.
+  // In wilderness with no roads, this has no effect (all cells = 1.0).
+  let roadMultiplier = 1.0
+  if (roadGrid && width) {
+    const roadCost = roadGrid[y2 * width + x2]
+    if (roadCost < 1.0) {
+      roadMultiplier = roadCost
+    }
+  }
 
   // ── Apply route preference modifier ──
   let slopeCost: number
@@ -272,7 +286,7 @@ function movementCost(
     }
   }
 
-  return slopeCost + roughnessCost + noiseCost
+  return (slopeCost + roughnessCost + noiseCost) * roadMultiplier
 }
 
 /** Check if a cell is a local ridge (higher than most neighbors). */
@@ -324,6 +338,7 @@ function astar(
   impassableSlopeDeg: number,
   noise: number = 0,
   preference: RoutePreference = 'least-effort',
+  roadGrid?: Float32Array | null,
 ): { x: number; y: number }[] | null {
   // 8-directional movement
   const dx = [1, 1, 0, -1, -1, -1, 0, 1]
@@ -418,7 +433,7 @@ function astar(
       const nIdx = ny * width + nx
       if (closed[nIdx]) continue
 
-      const cost = movementCost(grid, cx, cy, nx, ny, cellSizeM, impassableSlopeDeg, noise, preference)
+      const cost = movementCost(grid, cx, cy, nx, ny, cellSizeM, impassableSlopeDeg, noise, preference, roadGrid, width)
       if (!isFinite(cost)) continue
 
       const tentativeG = gScore[currentIdx] + cost
@@ -715,8 +730,25 @@ export async function planRoute(req: RoutePlanRequest): Promise<RoutePlanRespons
   const startCell = lngLatToCell(clampedStart.lng, clampedStart.lat, swLng, neLat, lngStep, latStep, width, height)
   const endCell = lngLatToCell(clampedEnd.lng, clampedEnd.lat, swLng, neLat, lngStep, latStep, width, height)
 
+  // ── Fetch OSM roads/trails and rasterize onto the grid ──
+  // This lets A* follow roads in urban/countryside areas. In wilderness
+  // with no roads, the road grid is all 1.0 (no effect on cost).
+  // Failures are non-fatal — we just fall back to terrain-only routing.
+  let roadGrid: Float32Array | null = null
+  try {
+    const roadRes = await fetchRoads(bounds)
+    if (roadRes.segments.length > 0) {
+      roadGrid = rasterizeRoads(
+        roadRes.segments, width, height,
+        swLng, neLat, lngStep, latStep,
+      )
+    }
+  } catch {
+    // Overpass may be down or rate-limited — continue without roads
+  }
+
   // Run A* for primary route
-  const primaryPath = astar(grid, width, height, startCell.x, startCell.y, endCell.x, endCell.y, cellSizeM, impassableSlopeDeg, 0, preference)
+  const primaryPath = astar(grid, width, height, startCell.x, startCell.y, endCell.x, endCell.y, cellSizeM, impassableSlopeDeg, 0, preference, roadGrid)
 
   if (!primaryPath) {
     throw new Error('No route found — terrain may be too steep or impassable between these points.')
@@ -732,7 +764,7 @@ export async function planRoute(req: RoutePlanRequest): Promise<RoutePlanRespons
   const alternatives: PlannedRoute[] = []
   if (includeAlternatives) {
     for (let i = 0; i < 2; i++) {
-      const altPath = astar(grid, width, height, startCell.x, startCell.y, endCell.x, endCell.y, cellSizeM, impassableSlopeDeg, 0.5 + i * 0.3, preference)
+      const altPath = astar(grid, width, height, startCell.x, startCell.y, endCell.x, endCell.y, cellSizeM, impassableSlopeDeg, 0.5 + i * 0.3, preference, roadGrid)
       if (altPath) {
         const alt = buildRoute(
           altPath, grid, width, height, cellSizeM,

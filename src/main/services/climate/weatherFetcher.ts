@@ -504,7 +504,7 @@ export class LightningFetcher {
     ];
     const url = servers[Math.floor(Math.random() * servers.length)];
     try {
-      this.ws = new WebSocket(url, { rejectUnauthorized: false });
+      this.ws = new WebSocket(url);
       this.ws.on('open', () => {
         this.connected = true;
         this.reconnectDelay = 5000;

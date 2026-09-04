@@ -126,6 +126,25 @@ export function MapCanvas() {
             attribution: '&copy; Esri, Maxar, Earthstar Geographics',
             maxzoom: 19,
           },
+          // Esri reference overlay — roads, place labels, boundaries
+          // Designed to sit on top of World Imagery. Transparent background.
+          esri_reference: {
+            type: 'raster',
+            tiles: [
+              'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+            ],
+            tileSize: 256,
+            maxzoom: 19,
+          },
+          // Esri transportation overlay — roads, highways, rail
+          esri_transportation: {
+            type: 'raster',
+            tiles: [
+              'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+            ],
+            tileSize: 256,
+            maxzoom: 19,
+          },
         },
         layers: [
           {
@@ -133,6 +152,20 @@ export function MapCanvas() {
             type: 'raster',
             source: 'esri_imagery',
             paint: {},
+          },
+          // Roads + highways (below labels so labels are readable)
+          {
+            id: 'reference-transportation',
+            type: 'raster',
+            source: 'esri_transportation',
+            paint: { 'raster-opacity': 0.9 },
+          },
+          // Boundaries + place names on top
+          {
+            id: 'reference-labels',
+            type: 'raster',
+            source: 'esri_reference',
+            paint: { 'raster-opacity': 0.9 },
           },
         ],
       },
@@ -298,6 +331,7 @@ export function MapCanvas() {
     /* --- Polygon / Line: click to add, dblclick to finish --- */
     const onClick = (e: maplibregl.MapMouseEvent) => {
       if (drawMode !== 'polygon' && drawMode !== 'line') return
+      if (e.originalEvent.shiftKey) return // shift-click is for endpoint placement
       e.preventDefault()
       polygonPointsRef.current.push(e.lngLat)
       renderPolyline(map, polygonPointsRef.current, drawMode)
@@ -306,6 +340,7 @@ export function MapCanvas() {
     /* --- Weather pin: click to drop a point for forecasting --- */
     const onWeatherClick = (e: maplibregl.MapMouseEvent) => {
       if (drawMode !== 'weather-pin') return
+      if (e.originalEvent.shiftKey) return // shift-click is for endpoint placement
       e.preventDefault()
       const point = { lng: e.lngLat.lng, lat: e.lngLat.lat }
       window.dispatchEvent(new CustomEvent('terrain:weather-pin', { detail: point }))

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { ClimateIntegrityPanel } from './ClimateIntegrityPanel'
 import { PredictionPanel } from './PredictionPanel'
 import { useClimateData } from '../hooks/useClimateData'
@@ -8,7 +8,7 @@ import { useMap } from '../hooks/useMap'
 import { useForecast } from '../hooks/useAnalysis'
 
 /**
- * RightPanel — the unified right-side dashboard with 16 tabs.
+ * RightPanel â€” the unified right-side dashboard with 16 tabs.
  *
  * Tab layout (2 rows of 8):
  *  Row 1: Weather | Stations | Cams | Verify | Ocean | Integ | Predict | Grid
@@ -25,25 +25,25 @@ type Tab =
   | 'net' | 'health' | 'vpn' | 'speed' | 'dns' | 'traffic'
 
 const TABS_ROW1: Array<{ id: Tab; label: string; icon: string }> = [
-  { id: 'weather', label: 'Weather', icon: '🌧' },
-  { id: 'stations', label: 'Stations', icon: '📡' },
-  { id: 'cams', label: 'Cams', icon: '📹' },
-  { id: 'verify', label: 'Verify', icon: '🛡' },
-  { id: 'ocean', label: 'Ocean', icon: '🌊' },
-  { id: 'integ', label: 'Integ', icon: '⚡' },
-  { id: 'predict', label: 'Predict', icon: '🧠' },
-  { id: 'grid', label: 'Grid', icon: '🔌' },
+  { id: 'weather', label: 'Weather', icon: 'ðŸŒ§' },
+  { id: 'stations', label: 'Stations', icon: 'ðŸ“¡' },
+  { id: 'cams', label: 'Cams', icon: 'ðŸ“¹' },
+  { id: 'verify', label: 'Verify', icon: 'ðŸ›¡' },
+  { id: 'ocean', label: 'Ocean', icon: 'ðŸŒŠ' },
+  { id: 'integ', label: 'Integ', icon: 'âš¡' },
+  { id: 'predict', label: 'Predict', icon: 'ðŸ§ ' },
+  { id: 'grid', label: 'Grid', icon: 'ðŸ”Œ' },
 ]
 
 const TABS_ROW2: Array<{ id: Tab; label: string; icon: string }> = [
-  { id: 'gridVer', label: 'GridVer', icon: '✓' },
-  { id: 'energy', label: 'Energy', icon: '🔋' },
-  { id: 'net', label: 'Net', icon: '🌐' },
-  { id: 'health', label: 'Health', icon: '❤' },
-  { id: 'vpn', label: 'VPN', icon: '🔒' },
-  { id: 'speed', label: 'Speed', icon: '⚡' },
-  { id: 'dns', label: 'DNS', icon: '📗' },
-  { id: 'traffic', label: 'Traffic', icon: '📊' },
+  { id: 'gridVer', label: 'GridVer', icon: 'âœ“' },
+  { id: 'energy', label: 'Energy', icon: 'ðŸ”‹' },
+  { id: 'net', label: 'Net', icon: 'ðŸŒ' },
+  { id: 'health', label: 'Health', icon: 'â¤' },
+  { id: 'vpn', label: 'VPN', icon: 'ðŸ”’' },
+  { id: 'speed', label: 'Speed', icon: 'âš¡' },
+  { id: 'dns', label: 'DNS', icon: 'ðŸ“—' },
+  { id: 'traffic', label: 'Traffic', icon: 'ðŸ“Š' },
 ]
 
 export function RightPanel() {
@@ -61,7 +61,7 @@ export function RightPanel() {
           onClick={() => setCollapsed(false)}
           title="Show right panel"
         >
-          ◂
+          â—‚
         </button>
       </aside>
     )
@@ -74,10 +74,10 @@ export function RightPanel() {
         onClick={() => setCollapsed(true)}
         title="Hide right panel"
       >
-        ▸
+        â–¸
       </button>
 
-      {/* Tab selector — 2 rows */}
+      {/* Tab selector â€” 2 rows */}
       <div className="rp-tabs">
         <div className="rp-tab-row">
           {TABS_ROW1.map((t) => (
@@ -123,7 +123,7 @@ function TabButton({ label, icon, active, onClick }: { label: string; icon: stri
   )
 }
 
-// ─── Tab implementations ───
+// â”€â”€â”€ Tab implementations â”€â”€â”€
 
 function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> }) {
   const { weatherPin, setWeatherPin, setDrawMode, drawMode } = useMap()
@@ -141,23 +141,23 @@ function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> })
     <div className="rip-scroll">
       {/* Weather Pin + Forecast section */}
       <div className="rip-section">
-        <div className="rip-section-title">� Point Forecast</div>
+        <div className="rip-section-title">Point Forecast</div>
         <div className="rp-weather-pin-controls">
           <button
             className={`rip-btn ${drawMode === 'weather-pin' ? 'rip-btn-toggle active' : ''}`}
             onClick={() => setDrawMode(drawMode === 'weather-pin' ? 'none' : 'weather-pin')}
           >
-            {drawMode === 'weather-pin' ? '◎ Click map to drop pin...' : '📍 Drop weather pin'}
+            {drawMode === 'weather-pin' ? 'â—Ž Click map to drop pin...' : 'ðŸ“ Drop weather pin'}
           </button>
           {weatherPin && (
             <button className="rip-btn" onClick={() => setWeatherPin(null)}>
-              ✕ Clear pin
+              âœ• Clear pin
             </button>
           )}
         </div>
         {weatherPin && (
           <div className="rp-pin-coords">
-            {weatherPin.lat.toFixed(4)}°, {weatherPin.lng.toFixed(4)}°
+            {weatherPin.lat.toFixed(4)}Â°, {weatherPin.lng.toFixed(4)}Â°
           </div>
         )}
         {forecast.loading && <div className="rip-empty-mini">Fetching forecast...</div>}
@@ -166,19 +166,19 @@ function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> })
           <div className="rp-forecast-display">
             <div className="rp-forecast-current">
               <div className="rp-forecast-temp">
-                <strong>{forecast.result.current.temperature.toFixed(0)}°C</strong>
-                <span className="rip-muted"> (feels {forecast.result.current.apparentTemp.toFixed(0)}°C)</span>
+                <strong>{forecast.result.current.temperature.toFixed(0)}Â°C</strong>
+                <span className="rip-muted"> (feels {forecast.result.current.apparentTemp.toFixed(0)}Â°C)</span>
               </div>
               <div className="rp-forecast-desc">{describeWeatherCode(forecast.result.current.weatherCode)}</div>
               <div className="rp-forecast-meta">
-                Wind {forecast.result.current.windSpeed.toFixed(0)} km/h · Humidity {forecast.result.current.humidity.toFixed(0)}% · Precip {forecast.result.current.precipitation.toFixed(1)}mm
+                Wind {forecast.result.current.windSpeed.toFixed(0)} km/h Â· Humidity {forecast.result.current.humidity.toFixed(0)}% Â· Precip {forecast.result.current.precipitation.toFixed(1)}mm
               </div>
             </div>
             <div className="rp-forecast-hourly">
               {forecast.result.hourly.slice(0, 12).map((h, i) => (
                 <div key={i} className="rp-forecast-hour">
                   <span className="rp-fh-time">{h.time}</span>
-                  <span className="rp-fh-temp">{(h.temp ?? 0).toFixed(0)}°</span>
+                  <span className="rp-fh-temp">{(h.temp ?? 0).toFixed(0)}Â°</span>
                   <span className="rp-fh-precip">{(h.precipProb ?? 0).toFixed(0)}%</span>
                 </div>
               ))}
@@ -194,16 +194,16 @@ function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> })
 
       {/* Global weather conditions */}
       <div className="rip-section">
-        <div className="rip-section-title">🌧 Global Conditions</div>
+        <div className="rip-section-title">ðŸŒ§ Global Conditions</div>
         {update?.stats ? (
           <div className="rp-stats-grid">
-            <StatCard label="Avg Air Temp" value={`${update.stats.avgAirTemp?.toFixed(1) ?? '—'}°C`} />
-            <StatCard label="Avg Water Temp" value={`${update.stats.avgWaterTemp?.toFixed(1) ?? '—'}°C`} />
-            <StatCard label="Max Water Temp" value={`${update.stats.maxWaterTemp?.toFixed(1) ?? '—'}°C`} />
-            <StatCard label="Min Water Temp" value={`${update.stats.minWaterTemp?.toFixed(1) ?? '—'}°C`} />
-            <StatCard label="Avg Wave Height" value={`${update.stats.avgWaveHeight?.toFixed(1) ?? '—'}m`} />
-            <StatCard label="Avg CO₂" value={`${update.stats.avgCO2?.toFixed(1) ?? '—'} ppm`} />
-            <StatCard label="Active Stations" value={update.stats.activeStations ?? '—'} />
+            <StatCard label="Avg Air Temp" value={`${update.stats.avgAirTemp?.toFixed(1) ?? 'â€”'}Â°C`} />
+            <StatCard label="Avg Water Temp" value={`${update.stats.avgWaterTemp?.toFixed(1) ?? 'â€”'}Â°C`} />
+            <StatCard label="Max Water Temp" value={`${update.stats.maxWaterTemp?.toFixed(1) ?? 'â€”'}Â°C`} />
+            <StatCard label="Min Water Temp" value={`${update.stats.minWaterTemp?.toFixed(1) ?? 'â€”'}Â°C`} />
+            <StatCard label="Avg Wave Height" value={`${update.stats.avgWaveHeight?.toFixed(1) ?? 'â€”'}m`} />
+            <StatCard label="Avg COâ‚‚" value={`${update.stats.avgCO2?.toFixed(1) ?? 'â€”'} ppm`} />
+            <StatCard label="Active Stations" value={update.stats.activeStations ?? 'â€”'} />
             <StatCard label="Anomalies" value={update.stats.anomalies ?? 0} />
           </div>
         ) : (
@@ -212,7 +212,7 @@ function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> })
       </div>
       {climate.alerts.length > 0 && (
         <div className="rip-section">
-          <div className="rip-subheader">⚠ Active Alerts ({climate.alerts.length})</div>
+          <div className="rip-subheader">âš  Active Alerts ({climate.alerts.length})</div>
           <div className="rip-alert-list">
             {climate.alerts.slice(-15).map((alert) => (
               <div key={alert.id} className="rip-alert-item" style={{ borderLeft: `2px solid ${alert.severity === 'critical' ? '#ef4444' : alert.severity === 'warning' ? '#fbbf24' : '#3b82f6'}` }}>
@@ -256,7 +256,7 @@ function StationsTab({ climate }: { climate: ReturnType<typeof useClimateData> }
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">📡 Climate Stations ({stations.length})</div>
+        <div className="rip-section-title">ðŸ“¡ Climate Stations ({stations.length})</div>
         {stations.length === 0 ? (
           <div className="rip-empty-mini">No stations loaded yet...</div>
         ) : (
@@ -266,9 +266,9 @@ function StationsTab({ climate }: { climate: ReturnType<typeof useClimateData> }
                 <span className="rp-dot" style={{ background: s.type === 'buoy' ? '#00ffcc' : s.type === 'argo_float' ? '#4fc3f7' : s.type === 'weather_station' ? '#00aa88' : s.type === 'carbon_station' ? '#ff6600' : '#c0c8d8' }} />
                 <div className="rp-station-info">
                   <div className="rp-station-name">{s.name}</div>
-                  <div className="rp-station-meta">{s.type.replace(/_/g, ' ')} · {s.source.replace(/_/g, ' ')}</div>
+                  <div className="rp-station-meta">{s.type.replace(/_/g, ' ')} Â· {s.source.replace(/_/g, ' ')}</div>
                 </div>
-                <div className="rp-station-coords">{s.lat.toFixed(1)}°, {s.lon.toFixed(1)}°</div>
+                <div className="rp-station-coords">{s.lat.toFixed(1)}Â°, {s.lon.toFixed(1)}Â°</div>
               </div>
             ))}
           </div>
@@ -281,7 +281,7 @@ function StationsTab({ climate }: { climate: ReturnType<typeof useClimateData> }
 function CamsTab() {
   return (
     <div className="rip-empty">
-      <div className="rip-empty-icon">📹</div>
+      <div className="rip-empty-icon">ðŸ“¹</div>
       <p>Webcam integration coming soon</p>
       <p className="rip-empty-sub">Windy webcam API proxy is wired in the backend</p>
     </div>
@@ -292,7 +292,7 @@ function VerifyTab({ climate }: { climate: ReturnType<typeof useClimateData> }) 
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">🛡 Weather Verification</div>
+        <div className="rip-section-title">ðŸ›¡ Weather Verification</div>
         <div className="rip-muted-italic" style={{ padding: '8px' }}>
           Location-based weather verification compares multiple sources for the selected point.
           The climate integrity verification runs continuously below.
@@ -314,7 +314,7 @@ function OceanTab({ climate }: { climate: ReturnType<typeof useClimateData> }) {
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">🌊 Ocean & Climate</div>
+        <div className="rip-section-title">ðŸŒŠ Ocean & Climate</div>
         {stats ? (
           <div className="rp-stats-grid">
             <StatCard label="Total Stations" value={stats.totalStations} />
@@ -322,7 +322,7 @@ function OceanTab({ climate }: { climate: ReturnType<typeof useClimateData> }) {
             <StatCard label="Buoys" value={stats.buoys} />
             <StatCard label="Argo Floats" value={stats.argoFloats} />
             <StatCard label="BGC-Argo" value={stats.bgcArgoFloats} />
-            <StatCard label="CO₂ Stations" value={stats.carbonStations} />
+            <StatCard label="COâ‚‚ Stations" value={stats.carbonStations} />
             <StatCard label="Weather Stns" value={stats.weatherStations} />
             <StatCard label="Anomalies" value={stats.anomalies} />
           </div>
@@ -335,7 +335,7 @@ function OceanTab({ climate }: { climate: ReturnType<typeof useClimateData> }) {
             {stats.regionalAverages.map((r: any) => (
               <div key={r.regionId} className="rp-region-item">
                 <div className="rp-region-name">{r.name}</div>
-                <div className="rp-region-temp">{r.avgTemp.toFixed(1)}°C</div>
+                <div className="rp-region-temp">{r.avgTemp.toFixed(1)}Â°C</div>
                 <div className="rp-region-meta">{r.stationCount} stations</div>
               </div>
             ))}
@@ -344,14 +344,14 @@ function OceanTab({ climate }: { climate: ReturnType<typeof useClimateData> }) {
       )}
       {vessels.length > 0 && (
         <div className="rip-section">
-          <div className="rip-subheader">🚢 Vessels ({vessels.length})</div>
+          <div className="rip-subheader">ðŸš¢ Vessels ({vessels.length})</div>
           <div className="rp-station-list">
             {vessels.slice(0, 100).map((v: any) => (
               <div key={v.imo} className="rp-station-item">
                 <span className="rp-dot" style={{ background: '#00aa88' }} />
                 <div className="rp-station-info">
                   <div className="rp-station-name">{v.name}</div>
-                  <div className="rp-station-meta">{v.vesselType || 'vessel'} · {v.flag || ''} · {v.speed?.toFixed(1) || 0}kt</div>
+                  <div className="rp-station-meta">{v.vesselType || 'vessel'} Â· {v.flag || ''} Â· {v.speed?.toFixed(1) || 0}kt</div>
                 </div>
               </div>
             ))}
@@ -382,7 +382,7 @@ function GridTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">🔌 Power Grid Assets ({assets.length})</div>
+        <div className="rip-section-title">ðŸ”Œ Power Grid Assets ({assets.length})</div>
         <div className="rp-cross-domain">
           <label className="rp-toggle-label">
             <input
@@ -390,11 +390,11 @@ function GridTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
               checked={grid.crossDomain}
               onChange={(e) => grid.setCrossDomain(e.target.checked)}
             />
-            Weather → Grid cross-domain
+            Weather â†’ Grid cross-domain
           </label>
         </div>
         {grid.alerts.length > 0 && (
-          <div className="rip-subheader" style={{ marginTop: '8px' }}>⚠ Grid Alerts ({grid.alerts.length})</div>
+          <div className="rip-subheader" style={{ marginTop: '8px' }}>âš  Grid Alerts ({grid.alerts.length})</div>
         )}
         {assets.length === 0 ? (
           <div className="rip-empty-mini">Loading grid data...</div>
@@ -405,7 +405,7 @@ function GridTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
                 <span className="rp-dot" style={{ background: a.type === 'power_plant' ? '#f59e0b' : a.type === 'substation' ? '#00ffcc' : a.type === 'data_center' ? '#ec4899' : a.type === 'ai_center' ? '#ef4444' : a.type === 'renewable' ? '#10b981' : a.type === 'battery' ? '#8b5cf6' : '#c0c8d8' }} />
                 <div className="rp-station-info">
                   <div className="rp-station-name">{a.name}</div>
-                  <div className="rp-station-meta">{a.type.replace(/_/g, ' ')} · {a.owner || ''}</div>
+                  <div className="rp-station-meta">{a.type.replace(/_/g, ' ')} Â· {a.owner || ''}</div>
                 </div>
               </div>
             ))}
@@ -421,11 +421,11 @@ function GridVerTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">✓ Grid Integrity Verification</div>
+        <div className="rip-section-title">âœ“ Grid Integrity Verification</div>
         {integrity?.summary ? (
           <div className="rp-stats-grid">
-            <StatCard label="Overall Score" value={integrity.summary.overallScore?.toFixed(0) ?? '—'} />
-            <StatCard label="Sensors" value={integrity.summary.totalSensorsMonitored ?? '—'} />
+            <StatCard label="Overall Score" value={integrity.summary.overallScore?.toFixed(0) ?? 'â€”'} />
+            <StatCard label="Sensors" value={integrity.summary.totalSensorsMonitored ?? 'â€”'} />
             <StatCard label="Verified" value={integrity.summary.sensorsVerified ?? 0} />
             <StatCard label="Failed" value={integrity.summary.sensorsFailed ?? 0} />
             <StatCard label="Flags" value={integrity.summary.totalFlags ?? 0} />
@@ -443,11 +443,11 @@ function GridVerTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
               <div key={id} className="rip-sensor-item">
                 <div className="rip-sensor-header">
                   <span style={{ color: h.status === 'verified' ? '#10b981' : h.status === 'warning' ? '#fbbf24' : h.status === 'failed' ? '#ef4444' : '#f97316' }}>
-                    {h.status === 'verified' ? '✓' : h.status === 'warning' ? '⚠' : h.status === 'failed' ? '✕' : '◷'}
+                    {h.status === 'verified' ? 'âœ“' : h.status === 'warning' ? 'âš ' : h.status === 'failed' ? 'âœ•' : 'â—·'}
                   </span>
                   <div className="rip-sensor-info">
                     <div className="rip-sensor-name">{id}</div>
-                    <div className="rip-sensor-meta">Score: {h.integrityScore?.toFixed(0) ?? '—'}</div>
+                    <div className="rip-sensor-meta">Score: {h.integrityScore?.toFixed(0) ?? 'â€”'}</div>
                   </div>
                 </div>
               </div>
@@ -461,7 +461,7 @@ function GridVerTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
 
 function EnergyTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
   const assets = grid.gridUpdate?.assets ?? []
-  const measurements = grid.gridUpdate?.measurements ?? []
+  const measurements = grid.gridUpdate?.measurements ?? {}
   const byType: Record<string, number> = {}
   let totalGen = 0
   let totalLoad = 0
@@ -474,7 +474,7 @@ function EnergyTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">🔋 Energy Mix</div>
+        <div className="rip-section-title">ðŸ”‹ Energy Mix</div>
         <div className="rp-stats-grid">
           <StatCard label="Total Assets" value={assets.length} />
           <StatCard label="Total Gen" value={`${totalGen.toFixed(0)}MW`} />
@@ -504,7 +504,7 @@ function NetTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">🌐 Network Connections</div>
+        <div className="rip-section-title">ðŸŒ Network Connections</div>
         {stats && (
           <div className="rp-stats-grid">
             <StatCard label="Total" value={stats.total ?? connections.length} />
@@ -514,7 +514,7 @@ function NetTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
           </div>
         )}
         {net.alerts.length > 0 && (
-          <div className="rip-subheader" style={{ marginTop: '8px' }}>⚠ Net Alerts ({net.alerts.length})</div>
+          <div className="rip-subheader" style={{ marginTop: '8px' }}>âš  Net Alerts ({net.alerts.length})</div>
         )}
         <div className="rp-station-list">
           {connections.slice(0, 200).map((c: any, i: number) => (
@@ -522,7 +522,7 @@ function NetTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
               <span className="rp-dot" style={{ background: c.protocol === 'UDP' ? '#f59e0b' : '#00aaff' }} />
               <div className="rp-station-info">
                 <div className="rp-station-name">{c.remoteAddress}:{c.remotePort}</div>
-                <div className="rp-station-meta">{c.protocol} · {c.processName || 'unknown'} · {c.state || ''}</div>
+                <div className="rp-station-meta">{c.protocol} Â· {c.processName || 'unknown'} Â· {c.state || ''}</div>
               </div>
               {c.geoLocation && (
                 <div className="rp-station-coords">{c.geoLocation.city}, {c.geoLocation.country}</div>
@@ -540,19 +540,19 @@ function HealthTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">❤ Network Health</div>
+        <div className="rip-section-title">â¤ Network Health</div>
         {h ? (
           <div className="rp-stats-grid">
-            <StatCard label="Latency" value={`${h.latency?.toFixed(0) ?? '—'}ms`} />
-            <StatCard label="Jitter" value={`${h.jitter?.toFixed(1) ?? '—'}ms`} />
-            <StatCard label="Packet Loss" value={`${h.packetLoss?.toFixed(1) ?? '—'}%`} />
-            <StatCard label="Medium" value={h.medium || '—'} />
+            <StatCard label="Latency" value={`${h.latency?.toFixed(0) ?? 'â€”'}ms`} />
+            <StatCard label="Jitter" value={`${h.jitter?.toFixed(1) ?? 'â€”'}ms`} />
+            <StatCard label="Packet Loss" value={`${h.packetLoss?.toFixed(1) ?? 'â€”'}%`} />
+            <StatCard label="Medium" value={h.medium || 'â€”'} />
           </div>
         ) : <div className="rip-empty-mini">Loading network health...</div>}
       </div>
       {net.outages.length > 0 && (
         <div className="rip-section">
-          <div className="rip-subheader">⚠ Outages ({net.outages.length})</div>
+          <div className="rip-subheader">âš  Outages ({net.outages.length})</div>
           <div className="rip-alert-list">
             {net.outages.slice(-15).map((o: any, i: number) => (
               <div key={i} className="rip-alert-item" style={{ borderLeft: '2px solid #ef4444' }}>
@@ -578,8 +578,8 @@ function VPNTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
     <div className="rip-scroll">
       <div className="rip-section">
         <div className="rip-section-title">
-          🔒 VPN Status
-          <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={() => net.refreshVPN()}>↻ Refresh</button>
+          ðŸ”’ VPN Status
+          <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={() => net.refreshVPN()}>â†» Refresh</button>
         </div>
         {v ? (
           <div className="rp-vpn-info">
@@ -600,7 +600,7 @@ function SpeedTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
     <div className="rip-scroll">
       <div className="rip-section">
         <div className="rip-section-title">
-          ⚡ Speed Test
+          âš¡ Speed Test
           <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={() => net.runSpeedTest()}>Run Test</button>
         </div>
         {net.speedTestProgress > 0 && net.speedTestProgress < 100 && (
@@ -621,7 +621,7 @@ function DNSTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
     <div className="rip-scroll">
       <div className="rip-section">
         <div className="rip-section-title">
-          📗 DNS Test
+          ðŸ“— DNS Test
           <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={() => net.runDNSTest()}>Run Test</button>
         </div>
         <div className="rip-muted-italic" style={{ padding: '8px' }}>
@@ -637,14 +637,14 @@ function TrafficTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
   return (
     <div className="rip-scroll">
       <div className="rip-section">
-        <div className="rip-section-title">📊 Network Traffic</div>
+        <div className="rip-section-title">ðŸ“Š Network Traffic</div>
         {traffic.length > 0 ? (
           <div className="rp-traffic-list">
             {traffic.slice(-30).map((t: any, i: number) => (
               <div key={i} className="rp-traffic-item">
                 <span className="rip-muted">{new Date(t.timestamp).toLocaleTimeString()}</span>
-                <span>Total: <strong>{t.totalConnections ?? t.total ?? '—'}</strong></span>
-                <span>Active: <strong>{t.activeConnections ?? t.active ?? '—'}</strong></span>
+                <span>Total: <strong>{t.totalConnections ?? t.total ?? 'â€”'}</strong></span>
+                <span>Active: <strong>{t.activeConnections ?? t.active ?? 'â€”'}</strong></span>
               </div>
             ))}
           </div>
@@ -654,7 +654,7 @@ function TrafficTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
   )
 }
 
-// ─── Shared small components ───
+// â”€â”€â”€ Shared small components â”€â”€â”€
 
 function StatCard({ label, value }: { label: string; value: any }) {
   return (
@@ -664,3 +664,4 @@ function StatCard({ label, value }: { label: string; value: any }) {
     </div>
   )
 }
+

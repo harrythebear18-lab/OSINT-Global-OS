@@ -228,7 +228,7 @@ export class VPNDetector {
 
   private getPublicIP(): Promise<string | null> {
     return new Promise((resolve) => {
-      const req = http.get('http://api.ipify.org?format=json', { timeout: 5000 }, (res) => {
+      const req = https.get('https://api.ipify.org?format=json', { timeout: 5000 }, (res) => {
         let data = '';
         res.on('data', (chunk) => (data += chunk));
         res.on('end', () => {

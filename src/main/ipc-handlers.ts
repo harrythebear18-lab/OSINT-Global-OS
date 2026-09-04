@@ -172,7 +172,7 @@ async function exportGeoJSON(data: Record<string, unknown>): Promise<{ saved: bo
   const geojson = toGeoJSON(data)
   const result = await dialog.showSaveDialog({
     title: 'Export as GeoJSON',
-    defaultPath: 'terrain-scout-export.geojson',
+    defaultPath: 'osint-global-os-export.geojson',
     filters: [{ name: 'GeoJSON', extensions: ['geojson', 'json'] }],
   })
   if (result.canceled || !result.filePath) return { saved: false }
@@ -184,7 +184,7 @@ async function exportKML(data: Record<string, unknown>): Promise<{ saved: boolea
   const kml = toKML(data)
   const result = await dialog.showSaveDialog({
     title: 'Export as KML',
-    defaultPath: 'terrain-scout-export.kml',
+    defaultPath: 'osint-global-os-export.kml',
     filters: [{ name: 'KML', extensions: ['kml'] }],
   })
   if (result.canceled || !result.filePath) return { saved: false }
@@ -231,7 +231,7 @@ async function importKml(): Promise<ImportResult | null> {
 /* ------------------------------------------------------------------ */
 
 async function clearCache(): Promise<{ cleared: boolean }> {
-  const cacheDir = path.join(os.homedir(), '.terrain-scout', 'cache')
+  const cacheDir = path.join(os.homedir(), '.osint-global-os', 'cache')
   try {
     if (fs.existsSync(cacheDir)) {
       fs.rmSync(cacheDir, { recursive: true, force: true })
@@ -255,7 +255,7 @@ async function exportPng(): Promise<{ saved: boolean; path?: string }> {
   const image = await win.webContents.capturePage()
   const result = await dialog.showSaveDialog({
     title: 'Export as PNG',
-    defaultPath: 'terrain-scout-snapshot.png',
+    defaultPath: 'osint-global-os-snapshot.png',
     filters: [{ name: 'PNG', extensions: ['png'] }],
   })
   if (result.canceled || !result.filePath) return { saved: false }
@@ -317,3 +317,4 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.WEATHER_RADAR, safeHandle(weatherRadar))
   ipcMain.handle(IPC.WEATHER_FORECAST, safeHandle(weatherForecast))
 }
+
