@@ -18,6 +18,7 @@ export function MapProvider({ children }: MapProviderProps) {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [drawMode, setDrawModeState] = useState<DrawMode>('none')
   const [selection, setSelection] = useState<SelectionEvent | null>(null)
+  const [selections, setSelections] = useState<SelectionEvent[]>([])
   const [lkp, setLkpState] = useState<LngLat | null>(null)
   const [mapReady, setMapReady] = useState(false)
   const [terrain3d, setTerrain3d] = useState(false)
@@ -33,6 +34,11 @@ export function MapProvider({ children }: MapProviderProps) {
 
   const setDrawMode = useCallback((mode: DrawMode) => {
     setDrawModeState(mode)
+  }, [])
+
+  /** Add a selection to the multi-selection list (for multi-box analysis). */
+  const addSelection = useCallback((sel: SelectionEvent) => {
+    setSelections((prev) => [...prev, sel])
   }, [])
 
   const setLkp = useCallback((point: LngLat | null) => {
@@ -102,9 +108,10 @@ export function MapProvider({ children }: MapProviderProps) {
 
   const clearSelection = useCallback(() => {
     setSelection(null)
+    setSelections([])
     const map = mapRef.current
     if (map) {
-      ;['selection-bbox', 'selection-polygon', 'selection-line'].forEach((id) => {
+      ;['selection-bbox', 'selection-polygon', 'selection-line', 'multi-selection-bbox', 'multi-selection-polygon'].forEach((id) => {
         if (map.getLayer(`${id}-fill`)) map.removeLayer(`${id}-fill`)
         if (map.getLayer(`${id}-outline`)) map.removeLayer(`${id}-outline`)
         if (map.getSource(id)) map.removeSource(id)
@@ -115,14 +122,15 @@ export function MapProvider({ children }: MapProviderProps) {
   // Sources that belong to the base map and must NOT be removed on clear.
   // Everything else (markers, analysis overlays, weather tiles, imports) is
   // considered user-added and gets wiped.
-  const BASE_SOURCES = new Set(['esri_imagery', 'terrain-dem', 'hillshade'])
-  const BASE_LAYERS = new Set(['satellite-layer', 'hillshade-layer'])
+  const BASE_SOURCES = new Set(['esri_imagery', 'esri_reference', 'esri_transportation', 'terrain-dem', 'hillshade'])
+  const BASE_LAYERS = new Set(['satellite-layer', 'reference-transportation', 'reference-labels', 'hillshade-layer'])
 
   const clearMap = useCallback(() => {
     const map = mapRef.current
 
     // 1. Reset all React point/selection state
     setSelection(null)
+    setSelections([])
     setLkpState(null)
     setEndPointState(null)
     setFallPointState(null)
@@ -156,10 +164,12 @@ export function MapProvider({ children }: MapProviderProps) {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<SelectionEvent>).detail
       setSelection(detail)
+      // Also add to multi-selection list (for multi-box analysis)
+      if (detail) addSelection(detail)
     }
     window.addEventListener('terrain:selection', handler)
     return () => window.removeEventListener('terrain:selection', handler)
-  }, [])
+  }, [addSelection])
 
   // Listen for LKP placement events from MapCanvas (right-click)
   useEffect(() => {
@@ -246,6 +256,8 @@ export function MapProvider({ children }: MapProviderProps) {
         drawMode,
         setDrawMode,
         selection,
+        selections,
+        addSelection,
         clearSelection,
         clearMap,
         registerMap,

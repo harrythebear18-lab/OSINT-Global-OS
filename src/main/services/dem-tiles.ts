@@ -27,7 +27,7 @@ import { homedir } from 'os'
 import { createWriteStream, existsSync, mkdirSync, readFileSync } from 'fs'
 import { pipeline } from 'stream/promises'
 
-const CACHE_DIR = join(homedir(), '.terrain-scout', 'cache', 'dem')
+const CACHE_DIR = join(homedir(), '.osint-global-os', 'cache', 'dem')
 
 // Terrarium tiles on AWS — free, no key
 const TILE_URL = (z: number, x: number, y: number) =>
@@ -198,3 +198,4 @@ export function lngLatToTilePixel(
 }
 
 export { DEFAULT_ZOOM, CACHE_DIR }
+

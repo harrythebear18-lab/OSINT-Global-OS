@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import maplibregl from 'maplibre-gl'
 import { useMap } from '../hooks/useMap'
-import { useSearchZones, useRestPoints } from '../hooks/useAnalysis'
 import type { FeatureCollection, Feature, Polygon, Point } from 'geojson'
 
 /**
@@ -61,7 +60,7 @@ interface AnalysisResults {
 let sharedResults: AnalysisResults = {}
 
 export function setAnalysisResults(results: AnalysisResults) {
-  sharedResults = results
+  sharedResults = { ...sharedResults, ...results }
   window.dispatchEvent(new CustomEvent('terrain:analysis-results'))
 }
 

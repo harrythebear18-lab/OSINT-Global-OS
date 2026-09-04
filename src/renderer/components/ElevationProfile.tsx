@@ -52,6 +52,7 @@ export function ElevationProfile({ profile, loading, units, onClose }: Elevation
     const chartH = H - padT - padB
 
     const elevRange = maxElev - minElev || 1
+    const safeMaxDist = maxDist || 1 // avoid divide-by-zero for single-point/zero-distance profiles
     const yPad = elevRange * 0.1
     const yMin = minElev - yPad
     const yMax = maxElev + yPad
@@ -59,7 +60,7 @@ export function ElevationProfile({ profile, loading, units, onClose }: Elevation
 
     const pathData = points
       .map((p, i) => {
-        const x = padL + (p.distance / maxDist) * chartW
+        const x = padL + (p.distance / safeMaxDist) * chartW
         const y = padT + (1 - (p.elevation! - yMin) / yRange) * chartH
         return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
       })
@@ -74,12 +75,12 @@ export function ElevationProfile({ profile, loading, units, onClose }: Elevation
     }))
 
     // X-axis labels (4 ticks)
-    const xTicks = [0, maxDist * 0.33, maxDist * 0.66, maxDist].map((v) => ({
+    const xTicks = [0, safeMaxDist * 0.33, safeMaxDist * 0.66, safeMaxDist].map((v) => ({
       value: v,
-      x: padL + (v / maxDist) * chartW,
+      x: padL + (v / safeMaxDist) * chartW,
     }))
 
-    return { pathData, areaData, yTicks, xTicks, points, maxDist, yMin, yRange, padL, padT, chartW, chartH, W, H }
+    return { pathData, areaData, yTicks, xTicks, points, maxDist: safeMaxDist, yMin, yRange, padL, padT, chartW, chartH, W, H }
   }, [profile])
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {

@@ -5,7 +5,7 @@
  *  - sample(lng, lat): elevation at a single point
  *  - profile(coords): elevation along a polyline with ascent/descent/slope
  *
- * Tiles are cached on disk at ~/.terrain-scout/cache/dem/
+ * Tiles are cached on disk at ~/.osint-global-os/cache/dem/
  * Sampling uses native DEM resolution (not resampled).
  * Missing tiles → null elevation (per Phase 2 error handling spec).
  */

@@ -26,6 +26,8 @@ export function LayerSwitcher() {
   const [slopeVisible, setSlopeVisible] = useState(true)
   const [anomalyVisible, setAnomalyVisible] = useState(true)
   const [routeVisible, setRouteVisible] = useState(true)
+  const [roadsVisible, setRoadsVisible] = useState(true)
+  const [labelsVisible, setLabelsVisible] = useState(true)
 
   // Apply satellite opacity
   useEffect(() => {
@@ -78,6 +80,22 @@ export function LayerSwitcher() {
       if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', routeVisible ? 'visible' : 'none')
     }
   }, [routeVisible, map])
+
+  // Toggle roads/transportation overlay
+  useEffect(() => {
+    if (!isMapAlive(map)) return
+    if (map.getLayer('reference-transportation')) {
+      map.setLayoutProperty('reference-transportation', 'visibility', roadsVisible ? 'visible' : 'none')
+    }
+  }, [roadsVisible, map])
+
+  // Toggle place labels + boundaries overlay
+  useEffect(() => {
+    if (!isMapAlive(map)) return
+    if (map.getLayer('reference-labels')) {
+      map.setLayoutProperty('reference-labels', 'visibility', labelsVisible ? 'visible' : 'none')
+    }
+  }, [labelsVisible, map])
 
   return (
     <section className="panel layer-switcher-panel">
@@ -138,6 +156,14 @@ export function LayerSwitcher() {
         <label className="layer-row">
           <input type="checkbox" checked={routeVisible} onChange={(e) => setRouteVisible(e.target.checked)} />
           <span className="layer-name">Route</span>
+        </label>
+        <label className="layer-row">
+          <input type="checkbox" checked={roadsVisible} onChange={(e) => setRoadsVisible(e.target.checked)} />
+          <span className="layer-name">Roads</span>
+        </label>
+        <label className="layer-row">
+          <input type="checkbox" checked={labelsVisible} onChange={(e) => setLabelsVisible(e.target.checked)} />
+          <span className="layer-name">Labels</span>
         </label>
       </div>
     </section>

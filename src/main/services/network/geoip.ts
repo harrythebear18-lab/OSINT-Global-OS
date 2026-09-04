@@ -2,6 +2,7 @@ import { GeoLocation } from './networkTypes';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import * as https from 'https';
 import { app } from 'electron';
 
 export class GeoIPService {
@@ -117,7 +118,7 @@ export class GeoIPService {
     );
 
     const result = await new Promise<any[]>((resolve, reject) => {
-      const req = http.request(
+      const req = https.request(
         {
           hostname: 'ip-api.com',
           path: '/batch',

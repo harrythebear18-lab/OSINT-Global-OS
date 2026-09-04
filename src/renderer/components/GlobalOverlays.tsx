@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import { useMap } from '../hooks/useMap'
 import { useClimateData } from '../hooks/useClimateData'
@@ -170,8 +170,13 @@ function isMapAlive(map: maplibregl.Map | null | undefined): map is maplibregl.M
   return !!map && !(map as any)._removed
 }
 
+/** Check that the map style is loaded and ready for addSource/addLayer calls. */
+function isMapReady(map: maplibregl.Map | null | undefined): map is maplibregl.Map {
+  return isMapAlive(map) && !!map.getStyle()
+}
+
 function upsertGeoJSONSource(map: maplibregl.Map, id: string, data: FeatureCollection | Feature) {
-  if (!isMapAlive(map)) return
+  if (!isMapReady(map)) return
   const existing = map.getSource(id) as maplibregl.GeoJSONSource | undefined
   if (existing) {
     existing.setData(data as any)
@@ -181,7 +186,7 @@ function upsertGeoJSONSource(map: maplibregl.Map, id: string, data: FeatureColle
 }
 
 function ensureLayer(map: maplibregl.Map, layer: maplibregl.LayerSpecification, beforeId?: string) {
-  if (!isMapAlive(map)) return
+  if (!isMapReady(map)) return
   if (!map.getLayer(layer.id)) {
     map.addLayer(layer, beforeId)
   }
@@ -199,7 +204,31 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
   const climate = useClimateData()
   const grid = useGridData()
   const net = useNetworkData()
-  const initialized = useRef(false)
+
+  // Track a "clear epoch" — increments every time the map is cleared,
+  // which forces all overlay useEffects to re-run and re-add their layers.
+  const [clearEpoch, setClearEpoch] = useState(0)
+  useEffect(() => {
+    const handler = () => setClearEpoch((e) => e + 1)
+    window.addEventListener('terrain:clear-all', handler)
+    return () => window.removeEventListener('terrain:clear-all', handler)
+  }, [])
+
+  // Track when the map style is fully loaded — layers/sources can only be
+  // added after this. All overlay useEffects depend on this so they retry
+  // once the map is ready.
+  const [mapLoaded, setMapLoaded] = useState(false)
+  useEffect(() => {
+    setMapLoaded(false) // reset when map instance changes
+    if (!isMapAlive(map)) return
+    if (map.loaded()) {
+      setMapLoaded(true)
+      return
+    }
+    const onLoad = () => setMapLoaded(true)
+    map.on('load', onLoad)
+    return () => { map.off('load', onLoad) }
+  }, [map])
 
   // Report viewport to backend on map move (for aircraft/vessel culling)
   useEffect(() => {
@@ -258,13 +287,14 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
       if (layerState.carbonStations) allowedTypes.push('carbon_station')
       if (layerState.climateStations) allowedTypes.push('buoy', 'argo_float', 'bgc_argo_float', 'weather_station', 'carbon_station')
 
-      const filter: any = ['in', ['get', 'type'], ['literal', allowedTypes]]
+      // Dedupe
+      const uniqueTypes = [...new Set(allowedTypes)]
 
       ensureLayer(map, {
         id: 'climate-stations-circle',
         type: 'circle',
         source: 'climate-stations',
-        filter: allowedTypes.length > 0 ? filter : ['literal', false],
+        filter: uniqueTypes.length > 0 ? ['in', ['get', 'type'], ['literal', uniqueTypes]] : ['literal', false],
         paint: {
           'circle-radius': 5,
           'circle-color': ['get', 'color'],
@@ -273,11 +303,96 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
           'circle-opacity': 0.8,
         },
       })
+      // Always update the filter — ensureLayer only sets it on first creation
+      if (map.getLayer('climate-stations-circle')) {
+        map.setFilter('climate-stations-circle', uniqueTypes.length > 0 ? ['in', ['get', 'type'], ['literal', uniqueTypes]] : ['literal', false])
+      }
       map.setLayoutProperty('climate-stations-circle', 'visibility', 'visible')
     } else if (map.getLayer('climate-stations-circle')) {
       map.setLayoutProperty('climate-stations-circle', 'visibility', 'none')
     }
-  }, [map, climate.climateUpdate, layerState.climateStations, layerState.oceanBuoys, layerState.argoFloats, layerState.weatherStations, layerState.carbonStations])
+  }, [map, climate.climateUpdate, layerState.climateStations, layerState.oceanBuoys, layerState.argoFloats, layerState.weatherStations, layerState.carbonStations, clearEpoch, mapLoaded])
+
+  // ─── Region temperatures (air temp from stations, color-coded) ───
+  useEffect(() => {
+    if (!isMapAlive(map)) return
+    const update = climate.climateUpdate
+    if (!update?.stations) return
+
+    const stations = update.stations as any[]
+    const measurements = update.measurements || {}
+
+    // Only include stations that have an airTemp measurement
+    const features: Feature<Point>[] = stations
+      .filter((s: any) => measurements[s.id]?.airTemp != null)
+      .slice(0, 5000)
+      .map((s: any) => {
+        const tempC = measurements[s.id]?.airTemp
+        // Color scale: -40°C (deep blue) → 0°C (cyan) → 20°C (green) → 40°C (red)
+        let color = '#6b7280'
+        if (tempC != null) {
+          if (tempC < -20) color = '#1e3a8a'
+          else if (tempC < -10) color = '#2563eb'
+          else if (tempC < 0) color = '#06b6d4'
+          else if (tempC < 10) color = '#10b981'
+          else if (tempC < 20) color = '#84cc16'
+          else if (tempC < 30) color = '#fbbf24'
+          else if (tempC < 40) color = '#f97316'
+          else color = '#ef4444'
+        }
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+          properties: {
+            id: s.id,
+            name: s.name,
+            type: s.type,
+            airTemp: tempC,
+            color,
+          },
+        }
+      })
+
+    const fc: FeatureCollection = { type: 'FeatureCollection', features }
+    upsertGeoJSONSource(map, 'region-temps', fc)
+
+    if (layerState.regionTemps) {
+      ensureLayer(map, {
+        id: 'region-temp-circle',
+        type: 'circle',
+        source: 'region-temps',
+        paint: {
+          'circle-radius': 7,
+          'circle-color': ['get', 'color'],
+          'circle-stroke-color': '#000',
+          'circle-stroke-width': 1,
+          'circle-opacity': 0.75,
+        },
+      })
+      ensureLayer(map, {
+        id: 'region-temp-label',
+        type: 'symbol',
+        source: 'region-temps',
+        minzoom: 5,
+        layout: {
+          'text-field': ['concat', ['to-string', ['get', 'airTemp']], '°C'],
+          'text-size': 10,
+          'text-offset': [0, -1.5],
+          'text-anchor': 'bottom',
+        },
+        paint: {
+          'text-color': '#fff',
+          'text-halo-color': '#000',
+          'text-halo-width': 1.5,
+        },
+      })
+      map.setLayoutProperty('region-temp-circle', 'visibility', 'visible')
+      if (map.getLayer('region-temp-label')) map.setLayoutProperty('region-temp-label', 'visibility', 'visible')
+    } else {
+      if (map.getLayer('region-temp-circle')) map.setLayoutProperty('region-temp-circle', 'visibility', 'none')
+      if (map.getLayer('region-temp-label')) map.setLayoutProperty('region-temp-label', 'visibility', 'none')
+    }
+  }, [map, climate.climateUpdate, layerState.regionTemps, clearEpoch, mapLoaded])
 
   // ─── Lightning strikes ───
   useEffect(() => {
@@ -321,7 +436,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
     } else if (map.getLayer('lightning-circle')) {
       map.setLayoutProperty('lightning-circle', 'visibility', 'none')
     }
-  }, [map, climate.integrity?.lightningStrikes, layerState.lightning])
+  }, [map, climate.integrity?.lightningStrikes, layerState.lightning, clearEpoch, mapLoaded])
 
   // ─── Storm cells + forecast tracks ───
   useEffect(() => {
@@ -393,7 +508,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
     } else if (map.getLayer('storm-track-line')) {
       map.setLayoutProperty('storm-track-line', 'visibility', 'none')
     }
-  }, [map, climate.integrity?.storms, layerState.stormCells, layerState.stormTracks])
+  }, [map, climate.integrity?.storms, layerState.stormCells, layerState.stormTracks, clearEpoch, mapLoaded])
 
   // ─── Seismic (earthquakes) ───
   useEffect(() => {
@@ -452,7 +567,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
       if (map.getLayer('earthquake-circle')) map.setLayoutProperty('earthquake-circle', 'visibility', 'none')
       if (map.getLayer('earthquake-ring')) map.setLayoutProperty('earthquake-ring', 'visibility', 'none')
     }
-  }, [map, climate.integrity?.earthquakes, layerState.earthquakes])
+  }, [map, climate.integrity?.earthquakes, layerState.earthquakes, clearEpoch, mapLoaded])
 
   // ─── Wildfires ───
   useEffect(() => {
@@ -493,7 +608,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
     } else if (map.getLayer('wildfire-circle')) {
       map.setLayoutProperty('wildfire-circle', 'visibility', 'none')
     }
-  }, [map, climate.integrity?.wildfires, layerState.wildfires])
+  }, [map, climate.integrity?.wildfires, layerState.wildfires, clearEpoch, mapLoaded])
 
   // ─── Vessels (AIS) ───
   useEffect(() => {
@@ -534,7 +649,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
     } else if (map.getLayer('vessel-circle')) {
       map.setLayoutProperty('vessel-circle', 'visibility', 'none')
     }
-  }, [map, climate.integrity?.vessels, layerState.vessels])
+  }, [map, climate.integrity?.vessels, layerState.vessels, clearEpoch, mapLoaded])
 
   // ─── Aircraft (ADS-B) ───
   useEffect(() => {
@@ -608,7 +723,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
     } else if (map.getLayer('aircraft-heatmap')) {
       map.setLayoutProperty('aircraft-heatmap', 'visibility', 'none')
     }
-  }, [map, climate.integrity?.aircraft, layerState.aircraft, layerState.aircraftHeatmap, aircraftAltitudeFilter])
+  }, [map, climate.integrity?.aircraft, layerState.aircraft, layerState.aircraftHeatmap, aircraftAltitudeFilter, clearEpoch, mapLoaded])
 
   // ─── Prediction overlays ───
   useEffect(() => {
@@ -712,7 +827,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
         map.setLayoutProperty('precip-forecast-circle', 'visibility', 'none')
       }
     }
-  }, [map, climate.predictions, layerState.severeWeather, layerState.sstAnomalies, layerState.precipForecast])
+  }, [map, climate.predictions, layerState.severeWeather, layerState.sstAnomalies, layerState.precipForecast, clearEpoch, mapLoaded])
 
   // ─── Grid assets ───
   useEffect(() => {
@@ -768,11 +883,15 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
           'circle-opacity': 0.85,
         },
       })
+      // Always update the filter — ensureLayer only sets it on first creation
+      if (map.getLayer('grid-asset-circle')) {
+        map.setFilter('grid-asset-circle', ['in', ['get', 'type'], ['literal', visibleTypes]])
+      }
       map.setLayoutProperty('grid-asset-circle', 'visibility', 'visible')
     } else if (map.getLayer('grid-asset-circle')) {
       map.setLayoutProperty('grid-asset-circle', 'visibility', 'none')
     }
-  }, [map, grid.gridUpdate, layerState.powerPlants, layerState.substations, layerState.dataCenters, layerState.aiCenters, layerState.renewableFarms, layerState.batteryStorage])
+  }, [map, grid.gridUpdate, layerState.powerPlants, layerState.substations, layerState.dataCenters, layerState.aiCenters, layerState.renewableFarms, layerState.batteryStorage, clearEpoch, mapLoaded])
 
   // ─── Grid interconnects ───
   useEffect(() => {
@@ -819,7 +938,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
     } else if (map.getLayer('grid-interconnect-line')) {
       map.setLayoutProperty('grid-interconnect-line', 'visibility', 'none')
     }
-  }, [map, grid.gridUpdate, layerState.gridInterconnects])
+  }, [map, grid.gridUpdate, layerState.gridInterconnects, clearEpoch, mapLoaded])
 
   // ─── Network connections ───
   useEffect(() => {
@@ -899,7 +1018,7 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
       if (map.getLayer('net-connection-line')) map.setLayoutProperty('net-connection-line', 'visibility', 'none')
       if (map.getLayer('net-endpoint-circle')) map.setLayoutProperty('net-endpoint-circle', 'visibility', 'none')
     }
-  }, [map, net.netUpdate, net.userLocation, layerState.networkConnections])
+  }, [map, net.netUpdate, net.userLocation, layerState.networkConnections, clearEpoch, mapLoaded])
 
   // ─── User location marker ───
   useEffect(() => {
@@ -931,7 +1050,8 @@ export function GlobalOverlays({ layerState, aircraftAltitudeFilter }: GlobalOve
     } else if (map.getLayer('user-location-circle')) {
       map.setLayoutProperty('user-location-circle', 'visibility', 'none')
     }
-  }, [map, net.userLocation, layerState.userLocation])
+  }, [map, net.userLocation, layerState.userLocation, clearEpoch, mapLoaded])
 
   return null // pure side-effect component
 }
+

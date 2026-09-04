@@ -18,6 +18,10 @@ export interface MapContextValue {
   drawMode: DrawMode
   setDrawMode: (mode: DrawMode) => void
   selection: SelectionEvent | null
+  /** All drawn selections (supports multi-box analysis). */
+  selections: SelectionEvent[]
+  /** Add a new selection to the multi-selection list. */
+  addSelection: (sel: SelectionEvent) => void
   clearSelection: () => void
   clearMap: () => void
   registerMap: (map: maplibregl.Map | null) => void

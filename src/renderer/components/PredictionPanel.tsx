@@ -146,8 +146,8 @@ export function PredictionPanel({ prediction }: Props) {
             Storm Tracks ({stormTracks.length})
           </div>
           <div className="rip-pred-list">
-            {stormTracks.map((st: any) => {
-              const id = st.stormId || st.name || Math.random().toString()
+            {stormTracks.map((st: any, i: number) => {
+              const id = st.stormId || st.name || `storm-${i}`
               const isExpanded = expandedStorms.has(id)
               return (
                 <div key={id} className="rip-pred-item" style={{ borderColor: riskColor(st.riskLevel) + '40' }}>

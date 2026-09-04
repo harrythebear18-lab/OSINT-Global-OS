@@ -20,7 +20,7 @@ interface AnalysisPanelProps {
  *  - Line = for elevation profiles (not area-based).
  */
 export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
-  const { selection, map, lkp } = useMap()
+  const { selection, selections, map, lkp } = useMap()
   const profileHook = useDemProfile()
   const zonesHook = useSearchZones()
   const restHook = useRestPoints()
@@ -54,6 +54,7 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
 
   const hasLine = selection?.type === 'line' && selection.coords.length >= 2
   const hasArea = (selection?.type === 'bbox' || selection?.type === 'polygon') && selection.coords.length >= 3
+  const multiBoxCount = selections.filter(s => (s.type === 'bbox' || s.type === 'polygon') && s.coords.length >= 3).length
 
   // LKP: use placed pin, or fall back to map center
   const getLkp = (): LngLat => {
@@ -87,32 +88,85 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
     return computeBounds(selection.coords)
   }
 
+  /** Get bounds for ALL drawn selections (multi-box support). */
+  const getAllBounds = (): [LngLat, LngLat][] => {
+    const allSels = selection ? [selection, ...selections.filter(s => s !== selection)] : selections
+    return allSels
+      .filter(s => (s.type === 'bbox' || s.type === 'polygon') && s.coords.length >= 3)
+      .map(s => computeBounds(s.coords))
+      .filter((b): b is [LngLat, LngLat] => b !== null)
+  }
+
   const runRunoff = async () => {
-    const bounds = getBounds()
-    if (!bounds) return
-    const res = await runoffHook.run({ bounds, rainfallMm })
-    if (res) setAnalysisResults({ runoff: res })
+    const allBounds = getAllBounds()
+    if (allBounds.length === 0) return
+    // Run on each bounding box and merge results
+    const allResults: any[] = []
+    for (const bounds of allBounds) {
+      const res = await runoffHook.run({ bounds, rainfallMm })
+      if (res) {
+        allResults.push(res)
+      }
+    }
+    if (allResults.length > 0) {
+      // Merge: combine all flow paths, pooling areas, etc.
+      const merged = {
+        flowPaths: allResults.flatMap(r => r.flowPaths || []),
+        poolingAreas: allResults.flatMap(r => r.poolingAreas || []),
+        watershedDivides: allResults.flatMap(r => r.watershedDivides || []),
+        floodRiskZones: allResults.flatMap(r => r.floodRiskZones || []),
+      }
+      setAnalysisResults({ runoff: merged })
+    }
   }
 
   const runSlope = async () => {
-    const bounds = getBounds()
-    if (!bounds) return
-    const res = await slopeHook.run({ bounds, profile: activityProfile })
-    if (res) setAnalysisResults({ slope: res })
+    const allBounds = getAllBounds()
+    if (allBounds.length === 0) return
+    const allResults: any[] = []
+    for (const bounds of allBounds) {
+      const res = await slopeHook.run({ bounds, profile: activityProfile })
+      if (res) allResults.push(res)
+    }
+    if (allResults.length > 0) {
+      const merged = {
+        bands: allResults.flatMap(r => r.bands || []),
+        legend: allResults[0].legend || [],
+      }
+      setAnalysisResults({ slope: merged })
+    }
   }
 
   const runAnomaly = async () => {
-    const bounds = getBounds()
-    if (!bounds) return
-    const res = await anomalyHook.run({ bounds })
-    if (res) setAnalysisResults({ anomaly: res })
+    const allBounds = getAllBounds()
+    if (allBounds.length === 0) return
+    const allResults: any[] = []
+    for (const bounds of allBounds) {
+      const res = await anomalyHook.run({ bounds })
+      if (res) allResults.push(res)
+    }
+    if (allResults.length > 0) {
+      const merged = {
+        zones: allResults.flatMap(r => r.zones || []),
+      }
+      setAnalysisResults({ anomaly: merged })
+    }
   }
 
   const runWater = async () => {
-    const bounds = getBounds()
-    if (!bounds) return
-    const res = await waterHook.run({ bounds })
-    if (res) setAnalysisResults({ water: res })
+    const allBounds = getAllBounds()
+    if (allBounds.length === 0) return
+    const allResults: any[] = []
+    for (const bounds of allBounds) {
+      const res = await waterHook.run({ bounds })
+      if (res) allResults.push(res)
+    }
+    if (allResults.length > 0) {
+      const merged = {
+        features: allResults.flatMap(r => r.features || []),
+      }
+      setAnalysisResults({ water: merged })
+    }
   }
 
   const runSentinel = async () => {
@@ -171,9 +225,14 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
         <span className={lkp ? 'active' : 'muted'}>
           {lkp ? `LKP: ${lkp.lng.toFixed(4)}, ${lkp.lat.toFixed(4)}` : 'No LKP pin — right-click to place'}
         </span>
+        {hasArea && multiBoxCount > 1 && (
+          <p className="analysis-hint active">
+            {multiBoxCount} search areas drawn — analysis runs on all.
+          </p>
+        )}
         {!hasArea && (
           <p className="analysis-hint muted">
-            Draw a bounding box or polygon to define the search area.
+            Draw a bounding box or polygon to define the search area. Draw multiple for wider coverage.
           </p>
         )}
       </div>

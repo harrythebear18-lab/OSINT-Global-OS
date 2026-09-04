@@ -20,6 +20,7 @@ import type {
 } from '@shared/types'
 import { demService } from './dem-service'
 import { lngLatToTile, DEFAULT_ZOOM } from './dem-tiles'
+import { computeOptimalZoom } from './dem-zoom'
 
 const THRESHOLDS: Record<ActivityProfile, number> = {
   hiking: 35,
@@ -118,17 +119,17 @@ const SLOPE_LEGEND = [
 
 async function loadDemGridArea(bounds: [LngLat, LngLat], zoom: number) {
   const [sw, ne] = bounds
-  const minTile = lngLatToTile(sw.lng, ne.lat, zoom)
-  const maxTile = lngLatToTile(ne.lng, sw.lat, zoom)
+  const effectiveZoom = computeOptimalZoom(bounds, zoom, 32)
+  const minTile = lngLatToTile(sw.lng, ne.lat, effectiveZoom)
+  const maxTile = lngLatToTile(ne.lng, sw.lat, effectiveZoom)
   const tilesX = maxTile.x - minTile.x + 1
   const tilesY = maxTile.y - minTile.y + 1
-  if (tilesX > 8 || tilesY > 8) throw new Error('Analysis area too large. Draw a smaller bounding box.')
 
   const tileGrids: (number | null)[][][][] = []
   for (let ty = 0; ty < tilesY; ty++) {
     tileGrids[ty] = []
     for (let tx = 0; tx < tilesX; tx++) {
-      const tile = await demService.loadTile(minTile.x + tx, minTile.y + ty, zoom)
+      const tile = await demService.loadTile(minTile.x + tx, minTile.y + ty, effectiveZoom)
       tileGrids[ty][tx] = tile.grid
     }
   }
