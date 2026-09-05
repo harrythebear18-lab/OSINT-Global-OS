@@ -421,6 +421,12 @@ export class ClimateMonitor {
       this.lastMeasurementTimestamps.set(stationId, m.timestamp);
     }
 
+    // Clean up timestamps for stations that no longer exist
+    const currentIds = new Set(measurements.keys());
+    for (const id of this.lastMeasurementTimestamps.keys()) {
+      if (!currentIds.has(id)) this.lastMeasurementTimestamps.delete(id);
+    }
+
     for (const station of stations) {
       const inv = this.invalidatedStations.get(station.id);
       if (inv) {

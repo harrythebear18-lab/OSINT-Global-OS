@@ -16,6 +16,12 @@ import type { LngLat } from '@shared/types'
 
 const OLLAMA_BASE = 'http://localhost:11434'
 
+// --- RAM optimisation: limit Ollama context window on low-memory rigs ---
+const _totalMemMB = Math.round(require('os').totalmem() / (1024 * 1024))
+const _isLowMem = _totalMemMB <= 16384
+const NUM_CTX = _isLowMem ? 2048 : 4096
+const KEEP_ALIVE = _isLowMem ? '2m' : '5m'
+
 export interface OllamaModel {
   name: string
   size: number
@@ -97,7 +103,9 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     stream: opts.stream ?? false,
     options: {
       temperature: opts.temperature ?? 0.7,
+      num_ctx: NUM_CTX,
     },
+    keep_alive: KEEP_ALIVE,
   }
   if (opts.tools && opts.tools.length > 0) {
     body.tools = opts.tools
@@ -188,7 +196,8 @@ export async function vision(
         },
       ],
       stream: false,
-      options: { temperature: 0.3 },
+      options: { temperature: 0.3, num_ctx: NUM_CTX },
+      keep_alive: KEEP_ALIVE,
     }),
   })
   if (!res.ok) {

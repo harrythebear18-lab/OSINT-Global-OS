@@ -109,6 +109,7 @@ export class FaultDetector {
   private lastAdapterCheck = 0;
   private readonly adapterCheckInterval = 30000; // Check for adapter changes every 30s
   private apiRateLimiter = new RateLimiter(1000); // Max 1 API call per second
+  private readonly isMac = process.platform === 'darwin';
 
   constructor(
     onHealthUpdate: (health: NetworkHealth) => void,
@@ -185,6 +186,72 @@ export class FaultDetector {
   }
 
   private async detectAdapterInfo() {
+    if (this.isMac) {
+      return this.detectAdapterInfoMac();
+    }
+    return this.detectAdapterInfoWindows();
+  }
+
+  private async detectAdapterInfoMac() {
+    return retryWithBackoff(async () => {
+      return new Promise<void>((resolve) => {
+        exec(
+          'networksetup -listallhardwareports',
+          { timeout: 5000 },
+          (error, stdout) => {
+            if (error || !stdout.trim()) {
+              resolve();
+              return;
+            }
+            try {
+              const lines = stdout.split('\n');
+              let name = '';
+              let device = '';
+              let mediaType = '';
+              for (let i = 0; i < lines.length; i++) {
+                if (lines[i].startsWith('Hardware Port:')) {
+                  name = lines[i].replace('Hardware Port:', '').trim();
+                } else if (lines[i].startsWith('Device:')) {
+                  device = lines[i].replace('Device:', '').trim();
+                  if (device && name) {
+                    if (/wi-?fi|airport|wlan/i.test(name)) {
+                      mediaType = '802.11 (Wi-Fi)';
+                    } else if (/ethernet|thunderbolt|usb/i.test(name)) {
+                      mediaType = '802.3 (Ethernet)';
+                    } else {
+                      mediaType = name;
+                    }
+                    break;
+                  }
+                }
+              }
+              if (name) {
+                let speed = 0;
+                if (device) {
+                  try {
+                    const ifconfigOut = require('child_process').execSync(
+                      `ifconfig ${device} 2>/dev/null`,
+                      { timeout: 3000, encoding: 'utf-8' }
+                    );
+                    const mediaMatch = ifconfigOut.match(/media:\s*(\S+)/);
+                    if (mediaMatch) mediaType = mediaMatch[1];
+                  } catch { /* ignore */ }
+                }
+                this.adapterInfo = { name, speed, mediaType };
+              }
+            } catch {
+              // ignore parse errors
+            }
+            resolve();
+          }
+        );
+      });
+    }, 2, 500).catch(() => {
+      // Silently fail on retry exhaustion
+    });
+  }
+
+  private async detectAdapterInfoWindows() {
     const PS_ADAPTER_SCRIPT = `
     $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
     if ($adapter) {
@@ -243,10 +310,35 @@ export class FaultDetector {
   }
 
   private async detectISPInfo() {
-    // Use a simple IP geolocation service to get ISP info
-    // This uses ip-api.com which provides free ISP/ASN data (HTTPS)
     await this.apiRateLimiter.throttle();
-    
+
+    if (this.isMac) {
+      return new Promise<void>((resolve) => {
+        exec(
+          'curl -s --max-time 10 https://ip-api.com/json/',
+          { timeout: 12000 },
+          (error, stdout) => {
+            if (error || !stdout.trim()) {
+              resolve();
+              return;
+            }
+            try {
+              const data = JSON.parse(stdout.trim());
+              if (data && data.isp) {
+                this.ispInfo = {
+                  name: data.isp,
+                  asn: data.as || '',
+                };
+              }
+            } catch {
+              // ignore parse errors
+            }
+            resolve();
+          }
+        );
+      });
+    }
+
     return new Promise<void>((resolve) => {
       exec(
         'powershell -NoProfile -NonInteractive -Command "(Invoke-RestMethod -Uri \'https://ip-api.com/json/\').isp, (Invoke-RestMethod -Uri \'https://ip-api.com/json/\').as"',
@@ -274,6 +366,27 @@ export class FaultDetector {
   }
 
   private async performTraceroute(): Promise<string> {
+    if (this.isMac) {
+      return new Promise((resolve) => {
+        exec(
+          'traceroute -m 10 -w 2 8.8.8.8',
+          { timeout: 15000 },
+          (error, stdout) => {
+            if (error || !stdout.trim()) {
+              resolve('unknown');
+              return;
+            }
+            const lines = stdout.trim().split('\n').filter(line => line.trim());
+            const lastLine = lines[lines.length - 1]?.trim() || 'unknown';
+            const ipMatch = lastLine.match(/\((\d+\.\d+\.\d+\.\d+)\)/);
+            const lastHop = ipMatch ? ipMatch[1] : lastLine;
+            this.lastTraceroute = lastHop;
+            resolve(lastHop);
+          }
+        );
+      });
+    }
+
     const PS_TRACEROUTE_SCRIPT = `
     Test-NetConnection -ComputerName 8.8.8.8 -TraceRoute -Hops 10 | Select-Object -ExpandProperty TraceRoute | Select-Object -First 10 | ForEach-Object { $_ }
     `;
@@ -339,28 +452,33 @@ export class FaultDetector {
   }
 
   private async pingHop(target: string, ttl: number): Promise<number> {
-    return new Promise((resolve) => {
-      exec(
-        `ping -n 1 -i ${ttl} ${target}`,
-        { windowsHide: true, timeout: 2000 },
-        (error, stdout) => {
-          if (error) {
-            resolve(0);
-            return;
-          }
+    const cmd = this.isMac
+      ? `ping -c 1 -m ${ttl} -W 2000 ${target}`
+      : `ping -n 1 -i ${ttl} ${target}`;
+    const opts = this.isMac ? { timeout: 3000 } : { windowsHide: true, timeout: 2000 };
 
-          const match = stdout.match(/time[=<](\d+)ms/);
-          if (match) {
-            resolve(parseInt(match[1], 10));
-          } else {
-            resolve(0);
-          }
+    return new Promise((resolve) => {
+      exec(cmd, opts, (error, stdout) => {
+        if (error) {
+          resolve(0);
+          return;
         }
-      );
+
+        const match = stdout.match(/time[=<](\d+\.?\d*)\s*ms/i);
+        if (match) {
+          resolve(Math.round(parseFloat(match[1])));
+        } else {
+          resolve(0);
+        }
+      });
     });
   }
 
   private async checkForAdapterChanges() {
+    if (this.isMac) {
+      return this.detectAdapterInfoMac();
+    }
+
     const PS_ADAPTER_SCRIPT = `
     $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
     if ($adapter) {
@@ -496,26 +614,31 @@ export class FaultDetector {
   }
 
   private async checkLocalNetwork(): Promise<boolean> {
+    const cmd = this.isMac ? 'ping -c 1 -t 1 127.0.0.1' : 'ping -n 1 -w 1000 127.0.0.1';
+    const opts = this.isMac ? { timeout: 2000 } : { windowsHide: true };
     return new Promise((resolve) => {
-      exec('ping -n 1 -w 1000 127.0.0.1', { windowsHide: true }, (error) => {
+      exec(cmd, opts, (error) => {
         resolve(!error);
       });
     });
   }
 
   private async checkDNS(): Promise<boolean> {
-    const dnsServer = sanitizePowerShellString(this.config.dnsServers[0]);
+    const dnsServer = this.config.dnsServers[0];
+    const opts = this.isMac ? { timeout: 3000 } : { windowsHide: true, timeout: 3000 };
     return new Promise((resolve) => {
-      exec(`nslookup google.com ${dnsServer}`, { windowsHide: true, timeout: 3000 }, (error) => {
+      exec(`nslookup google.com ${dnsServer}`, opts, (error) => {
         resolve(!error);
       });
     });
   }
 
   private async checkInternetConnectivity(): Promise<boolean> {
-    const testHost = sanitizePowerShellString(this.config.testHosts[0]);
+    const testHost = this.config.testHosts[0];
+    const cmd = this.isMac ? `ping -c 1 -t 2 ${testHost}` : `ping -n 1 -w 2000 ${testHost}`;
+    const opts = this.isMac ? { timeout: 3000 } : { windowsHide: true };
     return new Promise((resolve) => {
-      exec(`ping -n 1 -w 2000 ${testHost}`, { windowsHide: true }, (error) => {
+      exec(cmd, opts, (error) => {
         resolve(!error);
       });
     });
@@ -548,17 +671,19 @@ export class FaultDetector {
   }
 
   private async measureLatency(): Promise<number> {
-    const testHost = sanitizePowerShellString(this.config.testHosts[0]);
+    const testHost = this.config.testHosts[0];
+    const cmd = this.isMac ? `ping -c 1 ${testHost}` : `ping -n 1 ${testHost}`;
+    const opts = this.isMac ? { timeout: 3000 } : { windowsHide: true, timeout: 3000 };
     return new Promise((resolve) => {
-      exec(`ping -n 1 ${testHost}`, { windowsHide: true, timeout: 3000 }, (error, stdout) => {
+      exec(cmd, opts, (error, stdout) => {
         if (error) {
           resolve(0);
           return;
         }
         
-        const match = stdout.match(/time[=<](\d+)ms/);
+        const match = stdout.match(/time[=<](\d+\.?\d*)\s*ms/i);
         if (match) {
-          resolve(parseInt(match[1], 10));
+          resolve(Math.round(parseFloat(match[1])));
         } else {
           resolve(0);
         }
@@ -937,6 +1062,7 @@ export class FaultDetector {
 
     this.activeOutage = outage;
     this.outageHistory.push(outage);
+    if (this.outageHistory.length > 500) this.outageHistory.shift();
     this.saveOutageHistory();
     this.onOutage(outage);
 
@@ -962,14 +1088,13 @@ export class FaultDetector {
   }
 
   private playAlertSound() {
-    // Play a system beep sound
-    exec(
-      'powershell -NoProfile -NonInteractive -Command "[console]::beep(800, 200)"',
-      { windowsHide: true },
-      () => {
-        // Ignore errors
-      }
-    );
+    const cmd = this.isMac
+      ? 'afplay /System/Library/Sounds/Ping.aiff'
+      : 'powershell -NoProfile -NonInteractive -Command "[console]::beep(800, 200)"';
+    const opts = this.isMac ? {} : { windowsHide: true };
+    exec(cmd, opts, () => {
+      // Ignore errors
+    });
   }
 
   private resolveOutage() {

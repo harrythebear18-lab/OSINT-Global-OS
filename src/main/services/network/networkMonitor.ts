@@ -5,6 +5,17 @@ import { FaultDetector } from './faultDetector';
 import { BandwidthMonitor } from './bandwidthMonitor';
 import { QualityMonitor } from './qualityMonitor';
 
+const isMac = process.platform === 'darwin';
+
+// --- macOS: parse lsof -i -P -n output for network connections ---
+// Format: COMMAND   PID  USER  FD  TYPE  DEVICE  SIZE/OFF  NODE NAME
+// e.g.:  Chrome    123  user  45u  IPv4  0x123   0t0  TCP 192.168.1.5:52344->142.250.80.46:443 (ESTABLISHED)
+const MAC_LSOF_CMD = 'lsof -i -P -n 2>/dev/null';
+
+// --- macOS: parse netstat for listening ports ---
+const MAC_NETSTAT_CMD = 'netstat -an -p tcp -p udp 2>/dev/null';
+
+// --- Windows PowerShell scripts (original) ---
 const PS_SCRIPT = `
 $conns = @()
 $tcpConns = Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $_.RemoteAddress -ne '0.0.0.0' -and $_.RemoteAddress -ne '::' -and $_.RemoteAddress -ne '::1' }
@@ -265,6 +276,9 @@ export class NetworkMonitor {
   }
 
   private async refreshListeningPorts(): Promise<void> {
+    if (isMac) {
+      return this.refreshListeningPortsMac();
+    }
     return new Promise((resolve) => {
       const encoded = Buffer.from(PS_LISTEN_SCRIPT, 'utf16le').toString('base64');
       exec(
@@ -283,6 +297,46 @@ export class NetworkMonitor {
             }
           } catch {
             // ignore parse errors
+          }
+          resolve();
+        }
+      );
+    });
+  }
+
+  private async refreshListeningPortsMac(): Promise<void> {
+    return new Promise((resolve) => {
+      exec(
+        MAC_NETSTAT_CMD,
+        { maxBuffer: 1024 * 1024, timeout: 5000 },
+        (error, stdout) => {
+          if (error || !stdout.trim()) {
+            resolve();
+            return;
+          }
+          this.listeningPorts.clear();
+          const lines = stdout.split('\n');
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 4) continue;
+            const proto = parts[0].toUpperCase();
+            // TCP: tcp4 0 0  *.8080  *.*  LISTEN
+            // UDP: udp4 0 0  *.123  *.*
+            if (proto === 'TCP4' || proto === 'TCP6' || proto === 'TCP') {
+              const state = parts[parts.length - 1];
+              if (state !== 'LISTEN') continue;
+              const local = parts[3] || parts[1] || '';
+              const portMatch = local.match(/\.(\d+)$/);
+              if (portMatch) {
+                this.listeningPorts.add(`${portMatch[1]}-TCP`);
+              }
+            } else if (proto === 'UDP4' || proto === 'UDP6' || proto === 'UDP') {
+              const local = parts[3] || parts[1] || '';
+              const portMatch = local.match(/\.(\d+)$/);
+              if (portMatch) {
+                this.listeningPorts.add(`${portMatch[1]}-UDP`);
+              }
+            }
           }
           resolve();
         }
@@ -331,6 +385,9 @@ export class NetworkMonitor {
   }
 
   private getConnectionsInternal(): Promise<Omit<NetworkConnection, 'id' | 'firstSeen' | 'lastSeen'>[]> {
+    if (isMac) {
+      return this.getConnectionsMac();
+    }
     return new Promise((resolve) => {
       // Use base64 encoding to avoid all escaping issues with PowerShell
       const encodedScript = Buffer.from(PS_SCRIPT, 'utf16le').toString('base64');
@@ -366,6 +423,92 @@ export class NetworkMonitor {
           } catch (e) {
             resolve([]);
           }
+        }
+      );
+    });
+  }
+
+  private getConnectionsMac(): Promise<Omit<NetworkConnection, 'id' | 'firstSeen' | 'lastSeen'>[]> {
+    return new Promise((resolve) => {
+      exec(
+        MAC_LSOF_CMD,
+        { maxBuffer: 10 * 1024 * 1024, timeout: 5000 },
+        (error, stdout) => {
+          if (error || !stdout.trim()) {
+            resolve([]);
+            return;
+          }
+
+          const connections: Omit<NetworkConnection, 'id' | 'firstSeen' | 'lastSeen'>[] = [];
+          const lines = stdout.split('\n');
+          // Skip header line
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line.trim()) continue;
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 9) continue;
+
+            const command = parts[0];
+            const pid = parseInt(parts[1], 10) || 0;
+            const type = parts[4] || parts[3]; // IPv4 or IPv6
+            const nameIdx = parts.findIndex(p => p === 'TCP' || p === 'UDP');
+            if (nameIdx === -1) continue;
+            const proto = parts[nameIdx];
+            const nameField = parts.slice(nameIdx + 1).join(' ');
+
+            // Parse: local->remote (state) or local->remote
+            // e.g. 192.168.1.5:52344->142.250.80.46:443 (ESTABLISHED)
+            // e.g. *:8080 (LISTEN)
+            const arrowMatch = nameField.match(/^(.+?)->(.+?)(?:\s+\((\w+)\))?$/);
+            const listenMatch = nameField.match(/^(.+?)(?:\s+\((\w+)\))?$/);
+
+            let localAddr = '';
+            let localPort = 0;
+            let remoteAddr = '';
+            let remotePort = 0;
+            let state = '';
+
+            if (arrowMatch) {
+              const local = arrowMatch[1];
+              const remote = arrowMatch[2];
+              state = arrowMatch[3] || '';
+              const localParts = local.split(':');
+              const remoteParts = remote.split(':');
+              localPort = parseInt(localParts[localParts.length - 1], 10) || 0;
+              localAddr = localParts.slice(0, -1).join(':');
+              remotePort = parseInt(remoteParts[remoteParts.length - 1], 10) || 0;
+              remoteAddr = remoteParts.slice(0, -1).join(':');
+            } else if (listenMatch) {
+              const local = listenMatch[1];
+              state = listenMatch[2] || '';
+              const localParts = local.split(':');
+              localPort = parseInt(localParts[localParts.length - 1], 10) || 0;
+              localAddr = localParts.slice(0, -1).join(':');
+              remoteAddr = '*';
+              remotePort = 0;
+            } else {
+              continue;
+            }
+
+            // Skip local-only and wildcard-only connections with no remote
+            if (proto === 'TCP' && !remoteAddr && state !== 'LISTEN') continue;
+            if (remoteAddr === '*' || remoteAddr === '') continue;
+            if (remoteAddr === '0.0.0.0' || remoteAddr === '::' || remoteAddr === '::1') continue;
+            if (remoteAddr.startsWith('127.') || remoteAddr.startsWith('localhost')) continue;
+
+            connections.push({
+              protocol: proto as 'TCP' | 'UDP',
+              localAddress: localAddr,
+              localPort,
+              remoteAddress: remoteAddr,
+              remotePort,
+              state: state || (proto === 'UDP' ? 'UDP' : 'UNKNOWN'),
+              processId: pid,
+              processName: command,
+            });
+          }
+
+          resolve(connections);
         }
       );
     });

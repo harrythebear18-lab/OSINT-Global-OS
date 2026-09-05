@@ -483,6 +483,20 @@ export class LightningFetcher {
     return strikes;
   }
 
+  static disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.ws.removeAllListeners();
+      this.ws.close();
+      this.ws = null;
+    }
+    this.connected = false;
+    this.blitzStrikes = [];
+  }
+
   private static async getBlitzortungStrikes(): Promise<LightningStrike[]> {
     const now = Date.now();
     this.blitzStrikes = this.blitzStrikes.filter((s) => s.timestamp >= now - 30 * 60 * 1000);

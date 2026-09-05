@@ -31,7 +31,7 @@ import type {
   OutageEvent,
   UserConfig,
 } from './services/network/networkTypes'
-import { AircraftFetcher } from './services/climate/weatherFetcher'
+import { AircraftFetcher, LightningFetcher } from './services/climate/weatherFetcher'
 import {
   stormsToWeatherEvents,
   lightningToWeatherEvents,
@@ -130,6 +130,9 @@ export function registerClimateIpc(mainWindow: BrowserWindow): () => void {
   const geoIP = new GeoIPService()
   const vpnDetector = new VPNDetector(geoIP)
   const speedTestService = new SpeedTestService()
+  speedTestService.setOnProgress((progress: number) => {
+    sendToRenderer(mainWindow, IPC.SPEEDTEST_PROGRESS, progress)
+  })
   const dnsTestService = new DNSTestService()
   const notificationService = new NotificationService()
 
@@ -672,5 +675,6 @@ export function registerClimateIpc(mainWindow: BrowserWindow): () => void {
     predictionEngine.stop()
     gridMonitor.stop()
     networkMonitor.stop()
+    LightningFetcher.disconnect()
   }
 }

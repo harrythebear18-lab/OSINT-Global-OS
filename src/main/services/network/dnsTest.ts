@@ -1,6 +1,8 @@
 import { exec } from 'child_process';
 import { DNSTestResult } from './networkTypes';
 
+const isMac = process.platform === 'darwin';
+
 export class DNSTestService {
   private readonly defaultServers = [
     { name: 'Google DNS', ip: '8.8.8.8' },
@@ -16,7 +18,7 @@ export class DNSTestService {
     return new Promise((resolve) => {
       exec(
         `nslookup google.com ${ip}`,
-        { windowsHide: true, timeout: 5000 },
+        isMac ? { timeout: 5000 } : { windowsHide: true, timeout: 5000 },
         (error) => {
           const latency = Date.now() - startTime;
           resolve({

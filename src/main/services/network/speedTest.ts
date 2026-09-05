@@ -1,6 +1,8 @@
 import { exec } from 'child_process';
 import { SpeedTestResult } from './networkTypes';
 
+const isMac = process.platform === 'darwin';
+
 export class SpeedTestService {
   private isRunning = false;
   private onProgress?: (progress: number) => void;
@@ -15,22 +17,17 @@ export class SpeedTestService {
     }
 
     this.isRunning = true;
-    const startTime = Date.now();
 
     try {
-      // Measure latency first
       this.onProgress?.(10);
       const latency = await this.measureLatency();
 
-      // Measure download speed (using a simple file download from a CDN)
       this.onProgress?.(30);
       const downloadSpeed = await this.measureDownloadSpeed();
 
-      // Measure upload speed (using a small upload test)
       this.onProgress?.(70);
       const uploadSpeed = await this.measureUploadSpeed();
 
-      // Measure jitter
       this.onProgress?.(90);
       const jitter = await this.measureJitter();
 
@@ -48,95 +45,70 @@ export class SpeedTestService {
     }
   }
 
+  private pingCmd(count: number): string {
+    return isMac
+      ? `ping -c ${count} -t 5 8.8.8.8`
+      : `ping -n ${count} 8.8.8.8`;
+  }
+
+  private pingOpts(): { windowsHide?: boolean; timeout: number } {
+    return isMac ? { timeout: 10000 } : { windowsHide: true, timeout: 10000 };
+  }
+
+  private parseLatencies(stdout: string): number[] {
+    const matches = stdout.match(/time[=<](\d+[\d.]*)\s*ms/g);
+    if (!matches) return [];
+    return matches.map(m => parseFloat(m.replace(/time[=<]/, '').replace(/ms/, '').trim()));
+  }
+
   private async measureLatency(): Promise<number> {
     return new Promise((resolve) => {
-      exec('ping -n 4 8.8.8.8', { windowsHide: true, timeout: 5000 }, (error, stdout) => {
-        if (error) {
-          resolve(0);
-          return;
-        }
-
-        const matches = stdout.match(/time[=<](\d+)ms/g);
-        if (matches && matches.length > 0) {
-          const latencies = matches.map(m => parseInt(m.replace(/time[=<]/, '').replace('ms', ''), 10));
-          const avgLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
-          resolve(Math.round(avgLatency));
-        } else {
-          resolve(0);
-        }
+      exec(this.pingCmd(4), this.pingOpts(), (error, stdout) => {
+        if (error) { resolve(0); return; }
+        const latencies = this.parseLatencies(stdout);
+        resolve(latencies.length > 0 ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0);
       });
     });
   }
 
   private async measureDownloadSpeed(): Promise<number> {
-    // Simplified download speed test using ping latency as proxy
-    // Real download tests require reliable external endpoints
     return new Promise((resolve) => {
-      exec('ping -n 1 8.8.8.8', { windowsHide: true, timeout: 5000 }, (error, stdout) => {
-        if (error) {
-          resolve(0);
-          return;
-        }
-
-        const match = stdout.match(/time[=<](\d+)ms/);
-        if (match) {
-          const latency = parseInt(match[1], 10);
-          // Estimate speed based on latency (rough approximation)
-          // Lower latency = typically higher speed
+      exec(this.pingCmd(1), this.pingOpts(), (error, stdout) => {
+        if (error) { resolve(0); return; }
+        const latencies = this.parseLatencies(stdout);
+        if (latencies.length > 0) {
+          const latency = latencies[0];
           const estimatedSpeed = Math.max(1, Math.min(1000, 10000 / (latency + 1)));
           resolve(Math.round(estimatedSpeed));
-        } else {
-          resolve(0);
-        }
+        } else { resolve(0); }
       });
     });
   }
 
   private async measureUploadSpeed(): Promise<number> {
-    // Estimate upload as typically 10-50% of download for consumer connections
     return new Promise((resolve) => {
-      exec('ping -n 1 8.8.8.8', { windowsHide: true, timeout: 5000 }, (error, stdout) => {
-        if (error) {
-          resolve(0);
-          return;
-        }
-
-        const match = stdout.match(/time[=<](\d+)ms/);
-        if (match) {
-          const latency = parseInt(match[1], 10);
+      exec(this.pingCmd(1), this.pingOpts(), (error, stdout) => {
+        if (error) { resolve(0); return; }
+        const latencies = this.parseLatencies(stdout);
+        if (latencies.length > 0) {
+          const latency = latencies[0];
           const downloadSpeed = Math.max(1, Math.min(1000, 10000 / (latency + 1)));
-          // Upload is typically 20-40% of download
-          const uploadSpeed = downloadSpeed * 0.3;
-          resolve(Math.round(uploadSpeed));
-        } else {
-          resolve(0);
-        }
+          resolve(Math.round(downloadSpeed * 0.3));
+        } else { resolve(0); }
       });
     });
   }
 
   private async measureJitter(): Promise<number> {
-    // Measure jitter by running multiple pings and calculating variance
     return new Promise((resolve) => {
-      exec('ping -n 10 8.8.8.8', { windowsHide: true, timeout: 10000 }, (error, stdout) => {
-        if (error) {
-          resolve(0);
-          return;
-        }
-
-        const matches = stdout.match(/time[=<](\d+)ms/g);
-        if (matches && matches.length > 1) {
-          const latencies = matches.map(m => parseInt(m.replace(/time[=<]/, '').replace('ms', ''), 10));
-          
-          // Calculate standard deviation (jitter)
+      exec(this.pingCmd(10), this.pingOpts(), (error, stdout) => {
+        if (error) { resolve(0); return; }
+        const latencies = this.parseLatencies(stdout);
+        if (latencies.length > 1) {
           const avg = latencies.reduce((a, b) => a + b, 0) / latencies.length;
           const variance = latencies.reduce((sum, lat) => sum + Math.pow(lat - avg, 2), 0) / latencies.length;
-          const jitter = Math.sqrt(variance);
-          
-          resolve(Math.round(jitter));
-        } else {
-          resolve(0);
-        }
+          resolve(Math.round(Math.sqrt(variance)));
+        } else { resolve(0); }
       });
     });
   }

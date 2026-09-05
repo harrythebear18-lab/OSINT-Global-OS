@@ -112,6 +112,13 @@ export class GridMonitor extends EventEmitter {
         for (const a of fresh) this.knownAssetIds.add(a.id);
       }
       for (const a of result.assets) this.knownAssetIds.add(a.id);
+      // Prevent knownAssetIds from growing unbounded
+      if (this.knownAssetIds.size > 500) {
+        const keep = new Set(result.assets.map((a) => a.id));
+        for (const id of this.knownAssetIds) {
+          if (!keep.has(id)) this.knownAssetIds.delete(id);
+        }
+      }
 
       // Run verification layers
       this.assetHealth = this.runAssetVerification(result.assets, result.measurements);

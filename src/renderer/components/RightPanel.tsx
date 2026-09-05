@@ -1073,6 +1073,12 @@ function HealthTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 function VPNTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  const v = net.vpn
+ const [refreshing, setRefreshing] = useState(false)
+
+ const refresh = async () => {
+   setRefreshing(true)
+   try { await net.refreshVPN() } finally { setRefreshing(false) }
+ }
 
  return (
 
@@ -1084,7 +1090,9 @@ function VPNTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  VPN Status
 
- <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={() => net.refreshVPN()}>+ Refresh</button>
+ <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={refresh} disabled={refreshing}>
+   {refreshing ? 'Refreshing...' : '+ Refresh'}
+ </button>
 
  </div>
 
@@ -1116,6 +1124,23 @@ function VPNTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
 function SpeedTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
+ const [result, setResult] = useState<any>(null)
+ const [running, setRunning] = useState(false)
+ const [error, setError] = useState<string | null>(null)
+
+ const runTest = async () => {
+   setRunning(true)
+   setError(null)
+   try {
+     const res = await net.runSpeedTest()
+     setResult(res)
+   } catch (e: any) {
+     setError(e?.message || 'Speed test failed')
+   } finally {
+     setRunning(false)
+   }
+ }
+
  return (
 
  <div className="rip-scroll">
@@ -1126,11 +1151,13 @@ function SpeedTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  Speed Test
 
- <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={() => net.runSpeedTest()}>Run Test</button>
+ <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={runTest} disabled={running}>
+   {running ? 'Running...' : 'Run Test'}
+ </button>
 
  </div>
 
- {net.speedTestProgress > 0 && net.speedTestProgress < 100 && (
+ {(running || net.speedTestProgress > 0) && net.speedTestProgress < 100 && (
 
  <div className="rip-scorebar-track">
 
@@ -1140,11 +1167,33 @@ function SpeedTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  )}
 
+ {error && <div className="rp-forecast-error">{error}</div>}
+
+ {result && (
+
+ <div className="rp-stats-grid">
+
+ <StatCard label="Download" value={`${result.downloadSpeed ?? 0} Mbps`} />
+
+ <StatCard label="Upload" value={`${result.uploadSpeed ?? 0} Mbps`} />
+
+ <StatCard label="Latency" value={`${result.latency ?? 0} ms`} />
+
+ <StatCard label="Jitter" value={`${result.jitter ?? 0} ms`} />
+
+ </div>
+
+ )}
+
+ {!result && !running && !error && (
+
  <div className="rip-muted-italic" style={{ padding: '8px' }}>
 
  Click "Run Test" to measure latency, jitter, and download/upload speeds.
 
  </div>
+
+ )}
 
  </div>
 
@@ -1156,6 +1205,23 @@ function SpeedTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
 function DNSTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
+ const [results, setResults] = useState<any[]>([])
+ const [running, setRunning] = useState(false)
+ const [error, setError] = useState<string | null>(null)
+
+ const runTest = async () => {
+   setRunning(true)
+   setError(null)
+   try {
+     const res = await net.runDNSTest()
+     setResults(Array.isArray(res) ? res : [])
+   } catch (e: any) {
+     setError(e?.message || 'DNS test failed')
+   } finally {
+     setRunning(false)
+   }
+ }
+
  return (
 
  <div className="rip-scroll">
@@ -1166,15 +1232,49 @@ function DNSTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  \u2014 DNS Test
 
- <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={() => net.runDNSTest()}>Run Test</button>
+ <button className="rip-btn" style={{ marginLeft: '8px' }} onClick={runTest} disabled={running}>
+   {running ? 'Running...' : 'Run Test'}
+ </button>
 
  </div>
+
+ {error && <div className="rp-forecast-error">{error}</div>}
+
+ {results.length > 0 && (
+
+ <div className="rp-station-list">
+
+ {results.map((r: any, i: number) => (
+
+ <div key={i} className="rp-station-item">
+
+ <span className="rp-dot" style={{ background: r.success ? '#10b981' : '#ef4444' }} />
+
+ <div className="rp-station-info">
+
+ <div className="rp-station-name">{r.server}</div>
+
+ <div className="rp-station-meta">{r.ip} \u00B7 {r.latency}ms</div>
+
+ </div>
+
+ </div>
+
+ ))}
+
+ </div>
+
+ )}
+
+ {!results.length && !running && !error && (
 
  <div className="rip-muted-italic" style={{ padding: '8px' }}>
 
  Click "Run Test" to check DNS resolution latency against default servers.
 
  </div>
+
+ )}
 
  </div>
 

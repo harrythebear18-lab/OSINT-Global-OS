@@ -6,6 +6,8 @@ import { exec } from 'child_process';
 import { VPNStatus, VPNVerificationDetail, GeoLocation } from './networkTypes';
 import { GeoIPService } from './geoip';
 
+const isMac = process.platform === 'darwin';
+
 const VPN_ADAPTER_PATTERNS = [
   /tun/i, /tap/i, /wintun/i, /openvpn/i, /wireguard/i, /wg/i,
   /vpn/i, /ppp/i, /l2tp/i, /sstp/i, /ikev/i, /ipsec/i,
@@ -249,6 +251,9 @@ export class VPNDetector {
   }
 
   private getDNSServers(): Promise<string[]> {
+    if (isMac) {
+      return this.getDNSServersMac();
+    }
     return new Promise((resolve) => {
       const script = "Get-DnsClientServerAddress -AddressFamily IPv4 | Select-Object -ExpandProperty ServerAddresses | Sort-Object -Unique";
       const encoded = Buffer.from(script, 'utf16le').toString('base64');
@@ -257,7 +262,6 @@ export class VPNDetector {
         { timeout: 5000, windowsHide: true },
         (error, stdout) => {
           if (error || !stdout.trim()) {
-            // Fallback: use Node's built-in resolver (synchronous)
             const servers = dns.getServers();
             resolve(servers);
             return;
@@ -273,8 +277,33 @@ export class VPNDetector {
     });
   }
 
+  private getDNSServersMac(): Promise<string[]> {
+    return new Promise((resolve) => {
+      exec(
+        'scutil --dns 2>/dev/null | grep "nameserver" | sort -u',
+        { timeout: 5000 },
+        (error, stdout) => {
+          if (error || !stdout.trim()) {
+            resolve(dns.getServers());
+            return;
+          }
+          const servers = stdout
+            .trim()
+            .split('\n')
+            .map((s) => s.replace(/nameserver\[\d*\]\s*[:=]?\s*/, '').trim())
+            .filter((s) => s && !s.startsWith('fec') && !s.startsWith('fd'));
+          resolve(servers.length > 0 ? servers : dns.getServers());
+        }
+      );
+    });
+  }
+
   private async checkKillSwitch(vpnAdapter: string | null): Promise<boolean> {
     if (!vpnAdapter) return false;
+
+    if (isMac) {
+      return this.checkKillSwitchMac(vpnAdapter);
+    }
 
     return new Promise((resolve) => {
       const script = "Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Select-Object -ExpandProperty InterfaceAlias";
@@ -288,6 +317,20 @@ export class VPNDetector {
             return;
           }
           const routes = stdout.trim().split('\n').map((s) => s.trim());
+          resolve(routes.some((r) => r.toLowerCase().includes(vpnAdapter.toLowerCase())));
+        }
+      );
+    });
+  }
+
+  private checkKillSwitchMac(vpnAdapter: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      exec(
+        'netstat -rn 2>/dev/null | grep default',
+        { timeout: 5000 },
+        (error, stdout) => {
+          if (error) { resolve(false); return; }
+          const routes = stdout.trim().split('\n');
           resolve(routes.some((r) => r.toLowerCase().includes(vpnAdapter.toLowerCase())));
         }
       );
