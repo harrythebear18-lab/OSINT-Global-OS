@@ -92,8 +92,10 @@ async function loadDemGrid(
     throw new Error('No elevation data available for this area.')
   }
 
-  // Cap total cells — if too large, downsample by skipping cells
-  const maxCells = 150000
+  // Cap total cells — route planning needs finer resolution than other
+  // analyses because the path quality depends on having enough waypoints
+  // to follow terrain features. Allow up to 300k cells.
+  const maxCells = 300000
   let step = 1
   if (width * height > maxCells) {
     step = Math.ceil(Math.sqrt((width * height) / maxCells))
@@ -522,6 +524,71 @@ function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number)
 }
 
 /**
+ * Smooth a grid path using Catmull-Rom spline interpolation.
+ * A* on a grid produces angular paths with 45°/90° turns. This inserts
+ * intermediate points between cells, producing a natural-looking curve
+ * that follows the terrain without the stair-step pattern.
+ *
+ * The spline passes through all original A* waypoints but adds smooth
+ * transitions between them, so the rendered route looks like a trail
+ * rather than a grid path.
+ */
+function smoothPath(
+  path: { x: number; y: number }[],
+  grid: (number | null)[][],
+  width: number, height: number,
+  cellSizeM: number,
+  swLng: number, neLat: number, lngStep: number, latStep: number,
+): LngLat[] {
+  if (path.length < 3) {
+    return path.map((p) => cellToLngLat(p.x, p.y, swLng, neLat, lngStep, latStep))
+  }
+
+  // Convert grid cells to lng/lat
+  const points = path.map((p) => {
+    const ll = cellToLngLat(p.x, p.y, swLng, neLat, lngStep, latStep)
+    return { x: ll.lng, y: ll.lat }
+  })
+
+  // Catmull-Rom spline: for each segment between points[i] and points[i+1],
+  // generate intermediate points using the control points [i-1, i, i+1, i+2].
+  // This produces a smooth curve that passes through every original point.
+  const smoothed: LngLat[] = []
+  const segmentsPerSpan = 4 // 4 intermediate points between each pair of original points
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[Math.min(points.length - 1, i + 2)]
+
+    for (let t = 0; t < segmentsPerSpan; t++) {
+      const s = t / segmentsPerSpan
+      // Catmull-Rom interpolation
+      const s2 = s * s
+      const s3 = s2 * s
+      const x = 0.5 * (
+        (2 * p1.x) +
+        (-p0.x + p2.x) * s +
+        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * s2 +
+        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * s3
+      )
+      const y = 0.5 * (
+        (2 * p1.y) +
+        (-p0.y + p2.y) * s +
+        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * s2 +
+        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * s3
+      )
+      smoothed.push({ lng: x, lat: y })
+    }
+  }
+  // Add the final point
+  smoothed.push({ lng: points[points.length - 1].x, lat: points[points.length - 1].y })
+
+  return smoothed
+}
+
+/**
  * Build a PlannedRoute from a grid path.
  */
 function buildRoute(
@@ -536,17 +603,20 @@ function buildRoute(
   impassableSlopeDeg: number,
   visibilityFactor: number,
 ): PlannedRoute {
-  const coords: LngLat[] = []
+  // Generate smoothed coordinates for rendering — this replaces the
+  // angular grid path with a natural curve that looks like a trail.
+  const coords = smoothPath(path, grid, width, height, cellSizeM, swLng, neLat, lngStep, latStep)
   const segments: RouteSegment[] = []
   const elevations: PlannedRoute['elevations'] = []
   let totalDistanceM = 0
   let totalCost = 0
   let maxFallRisk = 0
 
+  // Use the original grid path for terrain analysis (elevation, slope, etc.)
+  // but the smoothed path for rendering.
   for (let i = 0; i < path.length; i++) {
     const cell = path[i]
     const lngLat = cellToLngLat(cell.x, cell.y, swLng, neLat, lngStep, latStep)
-    coords.push(lngLat)
 
     const elev = grid[cell.y]?.[cell.x] ?? null
     elevations.push({ lng: lngLat.lng, lat: lngLat.lat, elevation: elev, distance: totalDistanceM })
@@ -563,8 +633,9 @@ function buildRoute(
       totalCost += cost
       maxFallRisk = Math.max(maxFallRisk, fallRisk)
 
-      // Only add segment if it's meaningful (skip every other point to reduce noise)
-      if (i % 2 === 0 || i === path.length - 1) {
+      // Add every Nth segment to avoid spamming the segment list
+      const segInterval = Math.max(1, Math.floor(path.length / 50))
+      if (i % segInterval === 0 || i === path.length - 1) {
         segments.push({
           coords: [cellToLngLat(prev.x, prev.y, swLng, neLat, lngStep, latStep), lngLat],
           cost,
@@ -659,8 +730,14 @@ function extractRouteFallRiskZones(
  * reconstruction of their probable path.
  */
 export async function planRoute(req: RoutePlanRequest): Promise<RoutePlanResponse> {
-  const { start, end, bounds, tripParams, demZoom, includeAlternatives, routePreference, hikerProfile } = req
+  const { start, end, bounds, tripParams, demZoom, includeAlternatives, routePreference, hikerProfile, mode } = req
+  const analysisMode = mode || 'active-sar'
+  const isLegacy = analysisMode === 'legacy-research'
   const zoom = demZoom ?? DEFAULT_ZOOM
+
+  // Legacy mode: always include alternatives (trail network analysis)
+  // Active SAR: only if explicitly requested (single corridor focus)
+  const wantAlternatives = isLegacy || includeAlternatives
 
   // Load DEM grid
   const { grid, width, height, cellSizeM, swLng, neLat, lngStep, latStep } = await loadDemGrid(bounds, zoom)
@@ -760,10 +837,12 @@ export async function planRoute(req: RoutePlanRequest): Promise<RoutePlanRespons
     'route-primary', 'primary', walkSpeedMps, impassableSlopeDeg, visibilityFactor,
   )
 
-  // Generate alternatives if requested
+  // Generate alternatives if requested (legacy mode: always, active SAR: only if requested)
   const alternatives: PlannedRoute[] = []
-  if (includeAlternatives) {
-    for (let i = 0; i < 2; i++) {
+  if (wantAlternatives) {
+    // Legacy mode: generate more alternatives for trail network analysis
+    const altCount = isLegacy ? 4 : 2
+    for (let i = 0; i < altCount; i++) {
       const altPath = astar(grid, width, height, startCell.x, startCell.y, endCell.x, endCell.y, cellSizeM, impassableSlopeDeg, 0.5 + i * 0.3, preference, roadGrid)
       if (altPath) {
         const alt = buildRoute(

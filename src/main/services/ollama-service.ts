@@ -130,7 +130,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     body: JSON.stringify({ ...body, stream: true }),
   })
   if (!res.ok || !res.body) {
-    throw new Error(`Ollama streaming failed (${res.status})`)
+    const errText = res.ok ? 'no body' : await res.text().catch(() => 'unreadable')
+    throw new Error(`Ollama streaming failed (${res.status}): ${errText}`)
   }
 
   const reader = res.body.getReader()
@@ -326,6 +327,28 @@ export const SAR_TOOLS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'run_canopy_analysis',
+      description: 'Run canopy intelligence analysis: detects defoliation, dead trees, clearings, and corrects ground height by subtracting estimated canopy thickness from the DEM. Uses geolocation-aware regional tree height lookup. Useful for jungle/dense forest SAR where canopy blocks ground visibility.',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'sentinel_search',
+      description: 'Search for available satellite imagery layers (NASA GIBS) for the current search area. Returns available layers (true color, NDVI, thermal, etc.) and the best current image.',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_map_context',
       description: 'Get the current map state: center, zoom, selection bounds, LKP, active layers, and analysis results.',
       parameters: {
@@ -386,6 +409,8 @@ export const SAR_TOOLS: ToolDefinition[] = [
 
 // --- Context builder ---
 
+export type AnalysisMode = 'active-sar' | 'legacy-research'
+
 export interface MapContext {
   center: LngLat
   zoom: number
@@ -395,14 +420,48 @@ export interface MapContext {
   activeLayers: string[]
   analysisResults: Record<string, unknown>
   tripParams: Record<string, unknown>
+  /** Analysis mode — changes reasoning style. */
+  mode?: AnalysisMode
 }
 
 /** Build a system prompt with current map/analysis context. */
 export function buildSystemPrompt(ctx: MapContext): string {
+  const mode: AnalysisMode = ctx.mode || 'active-sar'
+  const isActiveSAR = mode === 'active-sar'
+
   const parts: string[] = [
-    'You are the AI analyst embedded in OSINT-Global-OS, a geospatial intelligence console for search-and-rescue (SAR) operations.',
+    isActiveSAR
+      ? 'You are the AI analyst embedded in OSINT-Global-OS, operating in ACTIVE SAR MODE. A real, time-critical search-and-rescue operation is underway.'
+      : 'You are the AI analyst embedded in OSINT-Global-OS, operating in LEGACY / RESEARCH MODE. This is a historical, cold-case, or exploratory terrain investigation.',
     'You have access to terrain analysis, satellite imagery, weather data, aircraft/ship tracking, and climate sensors.',
-    'Your role is to help SAR teams, field planners, and analysts reason about the situation on the ground.',
+    '',
+    isActiveSAR ? '## ACTIVE SAR MODE — Reasoning Style' : '## LEGACY / RESEARCH MODE — Reasoning Style',
+    isActiveSAR
+      ? [
+          '- The LKP is real and recent. Time since last seen is CRITICAL.',
+          '- Movement modelling matters. Use trip parameters aggressively.',
+          '- Hydrology, weather alerts, and hazard zones are CRITICAL safety factors.',
+          '- Search zones must be TIGHT and evidence-driven. Avoid wide-area speculation.',
+          '- The bounding box is NOT the primary frame — LKP -> corridor -> zones is.',
+          '- Be conservative. Prioritise safety-critical information.',
+          '- Avoid speculation. Use high-confidence reasoning only.',
+          '- Suggest immediate, actionable tools. Time matters.',
+          '- Generate SAR-style hypotheses: 2-3 tight zones, high confidence, clear evidence chains.',
+          '- Tool priority: run_search_zones -> run_rest_points -> run_fall_risk -> run_route.',
+        ].join('\n')
+      : [
+          '- The LKP may be approximate or estimated. Do NOT over-rely on it.',
+          '- Time since last seen is contextual, not critical.',
+          '- Movement modelling is optional. The bounding box is the PRIMARY frame.',
+          '- Weather is contextual, not critical. Use it for terrain understanding.',
+          '- Speculation is ALLOWED and encouraged — this is exploratory.',
+          '- Pull more external data. Multi-source search matters (web_search, vision, CLIP).',
+          '- Look for terrain anomalies, pattern analysis, and historical context.',
+          '- Use bbox-spread analysis instead of tight LKP corridors.',
+          '- Do NOT assume the person is alive or moving. Consider all scenarios.',
+          '- Generate exploratory hypotheses: 4-6 wide zones, alternative theories, lower confidence.',
+          '- Tool priority: run_anomaly -> analyze_satellite_image -> web_search -> run_slope_analysis.',
+        ].join('\n'),
     '',
     '## Current Map State',
     `- Center: ${ctx.center.lng.toFixed(4)}, ${ctx.center.lat.toFixed(4)} (zoom ${ctx.zoom})`,
@@ -433,7 +492,11 @@ export function buildSystemPrompt(ctx: MapContext): string {
   }
 
   if (Object.keys(ctx.tripParams).length > 0) {
-    parts.push('', '## Trip Parameters')
+    if (isActiveSAR) {
+      parts.push('', '## Trip Parameters (CRITICAL — drive all models)')
+    } else {
+      parts.push('', '## Trip Parameters (contextual — LKP is approximate)')
+    }
     for (const [key, value] of Object.entries(ctx.tripParams)) {
       parts.push(`- ${key}: ${value}`)
     }
@@ -441,14 +504,26 @@ export function buildSystemPrompt(ctx: MapContext): string {
 
   parts.push(
     '',
-    '## Guidelines',
-    '- Be concise and direct. SAR operations need fast, actionable answers.',
-    '- When you need more data, call a tool rather than guessing.',
-    '- If you are uncertain, say so explicitly. Do not fabricate data.',
-    '- Prioritize safety-critical information (fall risk, flood risk, impassable terrain).',
-    '- When suggesting search areas, consider terrain, weather, and the hiker profile.',
-    '- You can analyze satellite images visually — call analyze_satellite_image when visual assessment would help.',
-    '- When asked to assess the situation or suggest where to search, generate structured hypotheses.',
+    isActiveSAR ? '## Active SAR Guidelines' : '## Legacy / Research Guidelines',
+    isActiveSAR
+      ? [
+          '- Be concise and direct. Time-critical operations need fast, actionable answers.',
+          '- When you need more data, call a tool rather than guessing.',
+          '- If you are uncertain, say so explicitly. Do not fabricate data.',
+          '- Prioritize safety-critical information (fall risk, flood risk, impassable terrain).',
+          '- When suggesting search areas, consider terrain, weather, and the hiker profile.',
+          '- Use analyze_satellite_image to identify hazards, structures, and shelters.',
+          '- Generate 2-3 TIGHT hypotheses with high confidence and small zones.',
+        ].join('\n')
+      : [
+          '- Be thorough and exploratory. This is an investigation, not a rescue.',
+          '- When you need more data, call web_search for historical context and external sources.',
+          '- Speculation is allowed — propose alternative theories and test them.',
+          '- Use analyze_satellite_image to identify anomalies, patterns, and terrain features.',
+          '- Use run_anomaly to find depressions (caves, sinkholes) and prominences.',
+          '- Consider that the person may not be alive or moving — include static scenarios.',
+          '- Generate 4-6 EXPLORATORY hypotheses with wide zones and alternative theories.',
+        ].join('\n'),
     '',
     '## Hypothesis Format',
     'When generating hypotheses, output a ```hypothesis JSON block at the end of your response:',
@@ -478,7 +553,9 @@ export function buildSystemPrompt(ctx: MapContext): string {
     '  ]',
     '}',
     '```',
-    'Use real coordinates from the current map context. Generate 2-4 hypotheses with different scenarios.',
+    isActiveSAR
+      ? 'Use real coordinates from the current map context. Generate 2-3 TIGHT hypotheses with different scenarios. Keep zones small (under 1km). High confidence only.'
+      : 'Use real coordinates from the current map context. Generate 4-6 EXPLORATORY hypotheses with wide zones (1-5km). Alternative theories encouraged. Lower confidence is acceptable.',
     'Mark old hypotheses as "superseded" when new evidence changes the assessment.',
   )
 

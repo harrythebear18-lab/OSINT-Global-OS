@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useMap } from '../hooks/useMap'
-import { useDemProfile, useSearchZones, useRestPoints, useRunoff, useSlopeAnalysis, useAnomalyAnalysis, useExport, useWater, useSentinel, useImportKml } from '../hooks/useAnalysis'
-import { setAnalysisResults } from './MapOverlays'
-import type { LngLat, TripParams } from '@shared/types'
+import { useDemProfile, useSearchZones, useRestPoints, useRunoff, useSlopeAnalysis, useAnomalyAnalysis, useExport, useWater, useSentinel, useImportKml, useCanopy } from '../hooks/useAnalysis'
+import { setAnalysisResults, clearAnalysisLayer } from './MapOverlays'
+import type { LngLat, TripParams, AnalysisMode } from '@shared/types'
 import { computeBounds } from '@shared/types'
 
 interface AnalysisPanelProps {
   tripParams: TripParams
+  /** Global analysis mode — drives all analysis tools */
+  mode?: AnalysisMode
 }
 
 /**
@@ -19,7 +21,7 @@ interface AnalysisPanelProps {
  *  - TripParams = timeframe + hike parameters that drive all models.
  *  - Line = for elevation profiles (not area-based).
  */
-export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
+export function AnalysisPanel({ tripParams, mode = 'active-sar' }: AnalysisPanelProps) {
   const { selection, selections, map, lkp } = useMap()
   const profileHook = useDemProfile()
   const zonesHook = useSearchZones()
@@ -31,9 +33,17 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
   const waterHook = useWater()
   const sentinelHook = useSentinel()
   const importHook = useImportKml()
+  const canopyHook = useCanopy()
   const [rainfallMm, setRainfallMm] = useState(50)
   const [activityProfile, setActivityProfile] = useState<'hiking' | 'scrambling' | 'sar'>('hiking')
   const [gibsLayerId, setGibsLayerId] = useState('modis-true-color')
+  const [canopyHeightOverride, setCanopyHeightOverride] = useState<string>('')
+
+  /** Clear a single analysis layer without resetting the rest of the map */
+  const clearLayer = (key: string, hookClear?: () => void) => {
+    clearAnalysisLayer(key as any)
+    hookClear?.()
+  }
 
   // Reset all analysis state when "Clear Map" is pressed
   useEffect(() => {
@@ -79,7 +89,8 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
 
   const runRestPoints = async () => {
     const lkpPoint = getLkp()
-    const res = await restHook.run({ lkp: lkpPoint, maxHours: tripParams.hoursSinceLastSeen, tripParams })
+    const bnds = getBounds()
+    const res = await restHook.run({ lkp: lkpPoint, maxHours: tripParams.hoursSinceLastSeen, tripParams, bounds: bnds ?? undefined, mode })
     if (res) setAnalysisResults({ restPoints: res })
   }
 
@@ -177,7 +188,18 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
       setAnalysisResults({ sentinel: {
         tileUrl: res.best.tileUrl,
         id: res.best.id,
+        maxZoom: res.best.maxZoom,
       } })
+    }
+  }
+
+  const runCanopy = async () => {
+    const bounds = getBounds()
+    if (!bounds) return
+    const override = canopyHeightOverride ? parseFloat(canopyHeightOverride) : undefined
+    const res = await canopyHook.run({ bounds, mode, regionalCanopyHeightM: override })
+    if (res) {
+      setAnalysisResults({ canopy: res })
     }
   }
 
@@ -248,6 +270,7 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           >
             {profileHook.loading ? '...' : 'Run'}
           </button>
+          {profileHook.profile && <button className="clear-layer-btn" onClick={() => clearLayer('profile', profileHook.clear)}>✕</button>}
         </div>
         <p className="analysis-hint muted">Draw a line, then run</p>
         {profileHook.error && <p className="analysis-error">{profileHook.error}</p>}
@@ -264,6 +287,7 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           >
             {zonesHook.loading ? '...' : 'Run'}
           </button>
+          {zonesHook.zones && <button className="clear-layer-btn" onClick={() => clearLayer('zones', zonesHook.clear)}>✕</button>}
         </div>
         <p className="analysis-hint muted">
           Auto-rings from {lkp ? 'LKP pin' : 'map center'} based on {tripParams.pace} pace, {tripParams.weather} weather
@@ -287,9 +311,12 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           >
             {restHook.loading ? '...' : 'Run'}
           </button>
+          {restHook.points && <button className="clear-layer-btn" onClick={() => clearLayer('restPoints', restHook.clear)}>✕</button>}
         </div>
         <p className="analysis-hint muted">
-          Within {tripParams.hoursSinceLastSeen}h walk of {lkp ? 'LKP pin' : 'map center'} ({tripParams.experience})
+          {mode === 'active-sar'
+            ? `Within ${tripParams.hoursSinceLastSeen}h walk of ${lkp ? 'LKP pin' : 'map center'} (${tripParams.experience})`
+            : `Terrain-based across search area. LKP used as reference only.`}
         </p>
         {restHook.error && <p className="analysis-error">{restHook.error}</p>}
         {restHook.points && (
@@ -310,6 +337,7 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           >
             {runoffHook.loading ? '...' : 'Run'}
           </button>
+          {runoffHook.result && <button className="clear-layer-btn" onClick={() => clearLayer('runoff', runoffHook.clear)}>✕</button>}
         </div>
         <div className="rainfall-slider">
           <label className="param-label">Rainfall: {rainfallMm}mm</label>
@@ -344,6 +372,7 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           <button className="run-btn" onClick={runSlope} disabled={!hasArea || slopeHook.loading}>
             {slopeHook.loading ? '...' : 'Run'}
           </button>
+          {slopeHook.result && <button className="clear-layer-btn" onClick={() => clearLayer('slope', slopeHook.clear)}>✕</button>}
         </div>
         <div className="btn-group" style={{ marginTop: '4px' }}>
           {(['hiking', 'scrambling', 'sar'] as const).map((p) => (
@@ -382,6 +411,7 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           <button className="run-btn" onClick={runAnomaly} disabled={!hasArea || anomalyHook.loading}>
             {anomalyHook.loading ? '...' : 'Run'}
           </button>
+          {anomalyHook.result && <button className="clear-layer-btn" onClick={() => clearLayer('anomaly', anomalyHook.clear)}>✕</button>}
         </div>
         <p className="analysis-hint muted">Depressions + prominences (caves, sinkholes, ridges)</p>
         {anomalyHook.error && <p className="analysis-error">{anomalyHook.error}</p>}
@@ -399,6 +429,7 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           <button className="run-btn" onClick={runWater} disabled={!hasArea || waterHook.loading}>
             {waterHook.loading ? '...' : 'Show'}
           </button>
+          {waterHook.result && <button className="clear-layer-btn" onClick={() => clearLayer('water', waterHook.clear)}>✕</button>}
         </div>
         <p className="analysis-hint muted">OSM streams, lakes, springs (Overpass API)</p>
         {waterHook.error && <p className="analysis-error">{waterHook.error}</p>}
@@ -416,6 +447,7 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           <button className="run-btn" onClick={runSentinel} disabled={!hasArea || sentinelHook.loading}>
             {sentinelHook.loading ? '...' : 'Show'}
           </button>
+          {sentinelHook.result && <button className="clear-layer-btn" onClick={() => clearLayer('sentinel', sentinelHook.clear)}>✕</button>}
         </div>
         <select
           className="analysis-select"
@@ -435,6 +467,59 @@ export function AnalysisPanel({ tripParams }: AnalysisPanelProps) {
           <p className="analysis-result">
             {sentinelHook.result.layers.length} layers available. Showing: {sentinelHook.result.best.id}, {sentinelHook.result.best.date}
           </p>
+        )}
+      </div>
+
+      {/* Canopy Intelligence Layer */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span>Canopy Intelligence</span>
+          <button className="run-btn" onClick={runCanopy} disabled={!hasArea || canopyHook.loading}>
+            {canopyHook.loading ? '...' : 'Run'}
+          </button>
+          {canopyHook.result && <button className="clear-layer-btn" onClick={() => clearLayer('canopy', canopyHook.clear)}>✕</button>}
+        </div>
+        <p className="analysis-hint muted">
+          Defoliation, dead trees, ground height correction. Auto-detects regional canopy height via geolocation + web search.
+        </p>
+        <div className="analysis-row" style={{ marginTop: '4px' }}>
+          <input
+            type="text"
+            placeholder="Override canopy height (m) — leave blank for auto"
+            value={canopyHeightOverride}
+            onChange={(e) => setCanopyHeightOverride(e.target.value)}
+            style={{
+              flex: 1, padding: '4px 8px', fontSize: 11,
+              background: 'var(--bg-input, #1a1a1a)',
+              border: '1px solid var(--border, #333)',
+              color: 'var(--text, #ccc)',
+              borderRadius: 4,
+            }}
+          />
+        </div>
+        {canopyHook.error && <p className="analysis-error">{canopyHook.error}</p>}
+        {canopyHook.result && (
+          <div className="analysis-result" style={{ fontSize: 11, lineHeight: 1.5 }}>
+            <strong>Region:</strong> {canopyHook.result.regionName}<br/>
+            <strong>Biome:</strong> {canopyHook.result.biomeDescription}<br/>
+            <strong>Canopy height:</strong> {canopyHook.result.regionalCanopyHeightM}m ({canopyHook.result.canopyHeightSource})<br/>
+            <strong>Zones:</strong> {canopyHook.result.zones.length} found<br/>
+            {canopyHook.result.zones.filter(z => z.type === 'defoliation').length > 0 && (
+              <span style={{ color: '#e74c3c' }}>
+                {canopyHook.result.zones.filter(z => z.type === 'defoliation').length} defoliation zones<br/>
+              </span>
+            )}
+            {canopyHook.result.zones.filter(z => z.type === 'dead-trees').length > 0 && (
+              <span style={{ color: '#8b6914' }}>
+                {canopyHook.result.zones.filter(z => z.type === 'dead-trees').length} dead tree clusters<br/>
+              </span>
+            )}
+            {canopyHook.result.zones.filter(z => z.type === 'clearing').length > 0 && (
+              <span style={{ color: '#4ea1ff' }}>
+                {canopyHook.result.zones.filter(z => z.type === 'clearing').length} clearings<br/>
+              </span>
+            )}
+          </div>
         )}
       </div>
 

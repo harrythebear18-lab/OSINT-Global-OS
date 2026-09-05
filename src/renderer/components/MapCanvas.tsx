@@ -171,6 +171,8 @@ export function MapCanvas() {
       },
       center: [-116.5, 33.8],
       zoom: 9,
+      maxZoom: 18, // ~15-20m on scale bar — slightly closer before imagery pixelates
+      maxTileCacheSize: 1000,
     })
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
@@ -215,12 +217,15 @@ export function MapCanvas() {
     map.on('contextmenu', onContextMenu)
 
     // Shift+click to place end point (for route planning)
+    // Disable MapLibre's built-in box zoom (shift+drag) so it doesn't
+    // interfere with shift+click endpoint placement.
+    map.boxZoom.disable()
     const onShiftClick = (e: maplibregl.MapMouseEvent) => {
       if (!e.originalEvent.shiftKey) return
       e.preventDefault()
+      e.originalEvent.stopPropagation()
       const point = { lng: e.lngLat.lng, lat: e.lngLat.lat }
       window.dispatchEvent(new CustomEvent('terrain:endpoint', { detail: point }))
-      // Marker rendering handled by MarkerLayer component
     }
     map.on('click', onShiftClick)
 

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useMap } from '../hooks/useMap'
 import { useRoutePlan, useFallRisk, useRemainsCorridor } from '../hooks/useAnalysis'
-import { setAnalysisResults } from './MapOverlays'
+import { setAnalysisResults, clearAnalysisLayer } from './MapOverlays'
 import type { LngLat, TripParams } from '@shared/types'
 import { isWithinBounds, computeBounds } from '@shared/types'
 
@@ -153,6 +153,7 @@ export function IncidentPanel({ tripParams }: IncidentPanelProps) {
           <button className="run-btn" onClick={runRoute} disabled={!canRunRoute || routeHook.loading}>
             {routeHook.loading ? '...' : 'Run'}
           </button>
+          {routeHook.result && <button className="clear-layer-btn" onClick={() => { clearAnalysisLayer('route'); routeHook.clear() }}>✕</button>}
         </div>
         <p className="analysis-hint muted">Terrain-aware path within analysis area</p>
         {lkp && !startInBounds && <p className="analysis-warning">Start point is outside the drawn area</p>}
@@ -177,6 +178,7 @@ export function IncidentPanel({ tripParams }: IncidentPanelProps) {
           <button className="run-btn" onClick={runFallRisk} disabled={!hasArea || fallRiskHook.loading}>
             {fallRiskHook.loading ? '...' : 'Run'}
           </button>
+          {fallRiskHook.result && <button className="clear-layer-btn" onClick={() => { clearAnalysisLayer('fallRisk'); fallRiskHook.clear() }}>✕</button>}
         </div>
         <p className="analysis-hint muted">Analyzes terrain within drawn area only</p>
         {fallRiskHook.error && <p className="analysis-error">{fallRiskHook.error}</p>}
@@ -194,9 +196,12 @@ export function IncidentPanel({ tripParams }: IncidentPanelProps) {
           <button className="run-btn" onClick={runCorridor} disabled={!canRunCorridor || corridorHook.loading}>
             {corridorHook.loading ? '...' : 'Run'}
           </button>
+          {corridorHook.result && <button className="clear-layer-btn" onClick={() => { clearAnalysisLayer('corridor'); corridorHook.clear() }}>✕</button>}
         </div>
         <p className="analysis-hint muted">
-          Downhill-only from {fallPoint ? 'fall point' : 'LKP'} - stays within area
+          {fallPoint
+            ? `Traces downhill from fall point (red pin). Click the green route line to set a fall point.`
+            : `Traces downhill from ${lkp ? 'LKP' : 'map center'}. Tip: run Plan Route first, then click the route to set a fall point.`}
         </p>
         {fallPoint && !fallInBounds && <p className="analysis-warning">Fall point is outside the drawn area</p>}
         {corridorHook.error && <p className="analysis-error">{corridorHook.error}</p>}

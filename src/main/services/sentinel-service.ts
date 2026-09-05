@@ -62,6 +62,8 @@ export interface SentinelScene {
   thumbnail?: string
   /** If true, tileUrl is a single image (not a tile template). Always false for GIBS. */
   isImageOverlay?: boolean
+  /** Max zoom level the tile server supports. MapLibre should not fetch beyond this. */
+  maxZoom?: number
 }
 
 export interface SentinelResponse {
@@ -280,6 +282,7 @@ export async function searchSentinelScenes(
       { lng: ne.lng, lat: ne.lat },
     ],
     isImageOverlay: false,
+    maxZoom: layer.maxZoom,
   }
 
   // Build scenes list for backward compat (UI expects scenes[].best)
@@ -293,6 +296,7 @@ export async function searchSentinelScenes(
       { lng: ne.lng, lat: ne.lat },
     ],
     isImageOverlay: false,
+    maxZoom: l.maxZoom,
   }))
 
   return {

@@ -20,6 +20,7 @@ export const IPC = {
   EXPORT_KML: 'export:kml',
   WATER_FETCH: 'water:fetch',
   SENTINEL_SEARCH: 'sentinel:search',
+  CANOPY_ANALYSIS: 'canopy:analysis',
   IMPORT_KML: 'import:kml',
   CLEAR_CACHE: 'cache:clear',
   EXPORT_PNG: 'export:png',

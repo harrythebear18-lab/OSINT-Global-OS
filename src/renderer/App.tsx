@@ -23,7 +23,7 @@ import { HypothesisPanel } from './components/HypothesisPanel'
 import { ExplainabilityOverlay } from './components/ExplainabilityOverlay'
 import type { Hypothesis, HypothesisZone } from './lib/hypothesis'
 import { useDemProfile } from './hooks/useAnalysis'
-import type { TripParams } from '@shared/types'
+import type { TripParams, AnalysisMode } from '@shared/types'
 
 // Default trip params match the backend defaults
 const DEFAULT_TRIP_PARAMS: TripParams = {
@@ -48,6 +48,7 @@ export default function App() {
   const [aiAnalysisResults, setAiAnalysisResults] = useState<Record<string, unknown>>({})
   const [aiActiveLayers, setAiActiveLayers] = useState<string[]>([])
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([])
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('active-sar')
 
   // Track analysis results for AI context injection
   useEffect(() => {
@@ -107,7 +108,7 @@ export default function App() {
             <TripParamsPanel params={tripParams} onChange={setTripParams} />
           </CollapsiblePanel>
           <CollapsiblePanel title="Analysis">
-            <AnalysisPanel tripParams={tripParams} />
+            <AnalysisPanel tripParams={tripParams} mode={analysisMode} />
           </CollapsiblePanel>
           <CollapsiblePanel title="Weather">
             <WeatherPanel />
@@ -118,53 +119,149 @@ export default function App() {
           <CollapsiblePanel title="Settings" defaultOpen={false}>
             <SettingsPanel />
           </CollapsiblePanel>
-          <CollapsiblePanel title="AI Hypotheses" defaultOpen={false}>
-            <HypothesisPanel
-              hypotheses={hypotheses}
-              setHypotheses={setHypotheses}
-              onZoneSelect={(zone) => {
-                // Fly to zone on map
-                const coords = zone.coords
-                if (coords.length >= 2) {
-                  const lngs = coords.map((c) => c.lng)
-                  const lats = coords.map((c) => c.lat)
-                  const sw = [Math.min(...lngs), Math.min(...lats)]
-                  const ne = [Math.max(...lngs), Math.max(...lats)]
-                  // Access map via context — use window event
-                  window.dispatchEvent(new CustomEvent('terrain:fit-bounds', {
-                    detail: { sw, ne, padding: 50 }
-                  }))
-                }
-              }}
-            />
-          </CollapsiblePanel>
-          <CollapsiblePanel title="AI Analyst" defaultOpen={false}>
-            <AIChatPanel
-              tripParams={tripParams}
-              analysisResults={aiAnalysisResults}
-              activeLayers={aiActiveLayers}
-            />
-          </CollapsiblePanel>
         </Sidebar>
-        <main className="map-host">
-          <SearchBox />
-          <MapCanvas />
-          <DrawTools />
-          <MapOverlays />
-          <MarkerLayer />
-          <GlobalOverlays layerState={globalLayers} aircraftAltitudeFilter={aircraftAltitudeFilter} />
-          <ExplainabilityOverlay hypotheses={hypotheses} />
-          {profileHook.profile && (
-            <ElevationProfile
-              profile={profileHook.profile}
-              loading={profileHook.loading}
-              units={units}
-              onClose={profileHook.clear}
-            />
-          )}
-        </main>
+        <div className="map-and-bottombar">
+          <main className="map-host">
+            <SearchBox />
+            <MapCanvas />
+            <DrawTools />
+            <MapOverlays />
+            <MarkerLayer />
+            <GlobalOverlays layerState={globalLayers} aircraftAltitudeFilter={aircraftAltitudeFilter} />
+            <ExplainabilityOverlay hypotheses={hypotheses} />
+            {profileHook.profile && (
+              <ElevationProfile
+                profile={profileHook.profile}
+                loading={profileHook.loading}
+                units={units}
+                onClose={profileHook.clear}
+              />
+            )}
+          </main>
+          <AIBottomBar
+            hypotheses={hypotheses}
+            setHypotheses={setHypotheses}
+            tripParams={tripParams}
+            analysisResults={aiAnalysisResults}
+            activeLayers={aiActiveLayers}
+            mode={analysisMode}
+            setMode={setAnalysisMode}
+          />
+        </div>
         <RightPanel />
       </div>
     </MapProvider>
+  )
+}
+
+/** Bottom bar with collapsible AI Chat + Hypotheses tabs. */
+function AIBottomBar({
+  hypotheses,
+  setHypotheses,
+  tripParams,
+  analysisResults,
+  activeLayers,
+  mode,
+  setMode,
+}: {
+  hypotheses: Hypothesis[]
+  setHypotheses: (h: Hypothesis[]) => void
+  tripParams: TripParams
+  analysisResults: Record<string, unknown>
+  activeLayers: string[]
+  mode: AnalysisMode
+  setMode: (m: AnalysisMode) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState<'chat' | 'hypotheses'>('chat')
+  const [height, setHeight] = useState(280)
+
+  if (!open) {
+    return (
+      <div className="ai-bottombar-collapsed">
+        <button className="ai-bottombar-toggle" onClick={() => setOpen(true)}>
+          AI Analyst
+          {hypotheses.filter((h) => h.status === 'active').length > 0 && (
+            <span className="ai-bottombar-badge">{hypotheses.filter((h) => h.status === 'active').length}</span>
+          )}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="ai-bottombar" style={{ height }}>
+      <div className="ai-bottombar-header">
+        <div className="ai-bottombar-tabs">
+          <button
+            className={`ai-bottombar-tab ${tab === 'chat' ? 'active' : ''}`}
+            onClick={() => setTab('chat')}
+          >
+            Chat
+          </button>
+          <button
+            className={`ai-bottombar-tab ${tab === 'hypotheses' ? 'active' : ''}`}
+            onClick={() => setTab('hypotheses')}
+          >
+            Hypotheses
+            {hypotheses.filter((h) => h.status === 'active').length > 0 && (
+              <span className="ai-bottombar-badge">{hypotheses.filter((h) => h.status === 'active').length}</span>
+            )}
+          </button>
+        </div>
+        <div className="ai-mode-toggle">
+          <button
+            className={`ai-mode-btn ${mode === 'active-sar' ? 'active' : ''}`}
+            onClick={() => setMode('active-sar')}
+            title="Active SAR: LKP-centric, time-critical, conservative, tight zones."
+          >
+            Active SAR
+          </button>
+          <button
+            className={`ai-mode-btn ${mode === 'legacy-research' ? 'active' : ''}`}
+            onClick={() => setMode('legacy-research')}
+            title="Legacy / Research: bbox-spread, exploratory, speculation allowed, wide zones."
+          >
+            Legacy / Research
+          </button>
+        </div>
+        <div className="ai-bottombar-controls">
+          <button className="ai-bottombar-resize" onClick={() => setHeight(height === 280 ? 420 : 280)} title="Toggle height">
+            {height === 280 ? 'Expand' : 'Shrink'}
+          </button>
+          <button className="ai-bottombar-close" onClick={() => setOpen(false)} title="Collapse">
+            Collapse
+          </button>
+        </div>
+      </div>
+      <div className="ai-bottombar-content">
+        {tab === 'chat' && (
+          <AIChatPanel
+            tripParams={tripParams}
+            analysisResults={analysisResults}
+            activeLayers={activeLayers}
+            mode={mode}
+          />
+        )}
+        {tab === 'hypotheses' && (
+          <HypothesisPanel
+            hypotheses={hypotheses}
+            setHypotheses={setHypotheses}
+            onZoneSelect={(zone) => {
+              const coords = zone.coords
+              if (coords.length >= 2) {
+                const lngs = coords.map((c) => c.lng)
+                const lats = coords.map((c) => c.lat)
+                const sw = [Math.min(...lngs), Math.min(...lats)]
+                const ne = [Math.max(...lngs), Math.max(...lats)]
+                window.dispatchEvent(new CustomEvent('terrain:fit-bounds', {
+                  detail: { sw, ne, padding: 50 }
+                }))
+              }
+            }}
+          />
+        )}
+      </div>
+    </div>
   )
 }

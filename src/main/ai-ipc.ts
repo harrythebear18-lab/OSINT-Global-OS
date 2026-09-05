@@ -145,7 +145,8 @@ export function registerAiIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.WEB_SEARCH, async (_e, req: {
     query: string
     location?: { lng: number; lat: number }
+    mode?: 'active-sar' | 'legacy-research'
   }) => {
-    return await webSearch(req.query, req.location)
+    return await webSearch(req.query, req.location, req.mode)
   })
 }

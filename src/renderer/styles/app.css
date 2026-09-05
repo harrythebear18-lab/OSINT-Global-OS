@@ -2227,6 +2227,191 @@ body,
   color: var(--muted);
   margin-bottom: 2px;
 }
+
+/* ─── AI Bottom Bar ─── */
+.map-and-bottombar {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.map-and-bottombar .map-host {
+  flex: 1;
+  min-height: 0;
+}
+
+.ai-bottombar-collapsed {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  padding: 0;
+}
+
+.ai-bottombar-toggle {
+  width: 100%;
+  padding: 8px 16px;
+  background: var(--panel);
+  color: var(--text);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+
+.ai-bottombar-toggle:hover {
+  background: var(--panel-2);
+}
+
+.ai-bottombar-badge {
+  background: var(--accent);
+  color: #0b0f14;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.ai-bottombar {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  transition: height 0.2s;
+}
+
+.ai-bottombar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ai-bottombar-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.ai-mode-toggle {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+.ai-mode-btn {
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid var(--border, #333);
+  background: transparent;
+  color: var(--muted, #888);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.ai-mode-btn:hover {
+  border-color: var(--accent, #4a9);
+  color: var(--text, #ccc);
+}
+
+.ai-mode-btn.active {
+  background: var(--accent, #4a9);
+  color: #fff;
+  border-color: var(--accent, #4a9);
+}
+
+.ai-mode-btn.active:nth-child(1) {
+  background: #e74c3c;
+  border-color: #e74c3c;
+}
+
+.ai-mode-btn.active:nth-child(2) {
+  background: #8b6914;
+  border-color: #8b6914;
+}
+
+.ai-bottombar-tab {
+  padding: 6px 16px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.ai-bottombar-tab:hover {
+  color: var(--text);
+}
+
+.ai-bottombar-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.ai-bottombar-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-bottombar-resize,
+.ai-bottombar-close {
+  padding: 4px 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.ai-bottombar-resize:hover,
+.ai-bottombar-close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.ai-bottombar-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+.ai-bottombar-content > * {
+  flex: 1;
+}
+
+/* Make chat panel fill bottom bar */
+.ai-bottombar .ai-chat-panel {
+  border-left: none;
+  height: 100%;
+}
+
+/* Make hypothesis panel scrollable in bottom bar */
+.ai-bottombar .hyp-panel {
+  padding: 8px 12px;
+  overflow-y: auto;
+  height: 100%;
+}
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -2414,6 +2599,51 @@ body,
 .run-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.clear-layer-btn {
+  background: transparent;
+  color: var(--text-muted, #888);
+  border: 1px solid var(--border, #333);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  margin-left: 4px;
+  line-height: 1;
+}
+.clear-layer-btn:hover {
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+
+.rest-mode-toggle {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0 2px;
+}
+
+.rest-mode-btn {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 10px;
+  border: 1px solid var(--border, #333);
+  background: transparent;
+  color: var(--text-dim, #888);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rest-mode-btn:hover {
+  border-color: var(--accent, #4a9);
+  color: var(--text, #ccc);
+}
+
+.rest-mode-btn.active {
+  background: var(--accent, #4a9);
+  color: #fff;
+  border-color: var(--accent, #4a9);
 }
 
 .analysis-hint {

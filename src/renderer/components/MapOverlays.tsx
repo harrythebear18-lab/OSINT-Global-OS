@@ -51,6 +51,33 @@ interface AnalysisResults {
   sentinel?: {
     tileUrl: string
     id: string
+    maxZoom?: number
+  }
+  canopy?: {
+    zones: {
+      id: string
+      coords: { lng: number; lat: number }[]
+      type: 'defoliation' | 'dead-trees' | 'clearing' | 'thinning' | 'healthy-forest'
+      avgNdvi: number
+      avgCanopyHeightM: number
+      areaM2: number
+      severity: number
+      description: string
+    }[]
+    cells: {
+      lng: number
+      lat: number
+      rawElevation: number
+      ndvi: number
+      canopyHeightM: number
+      groundElevation: number
+      class: string
+      defoliation: number
+      deadTreeLikelihood: number
+    }[]
+    regionalCanopyHeightM: number
+    regionName: string
+    biomeDescription: string
   }
   imported?: {
     features: { id: string; name: string; type: 'point' | 'line' | 'polygon'; coords: { lng: number; lat: number }[]; styleColor?: string }[]
@@ -68,6 +95,20 @@ export function clearAnalysisResults() {
   sharedResults = {}
 }
 
+/**
+ * Clear a single analysis layer without resetting the rest of the map.
+ * Removes the shared results key + dispatches an event so MapOverlays
+ * can strip the corresponding map layers/sources.
+ */
+export function clearAnalysisLayer(key: keyof AnalysisResults) {
+  if (key in sharedResults) {
+    const next = { ...sharedResults }
+    delete next[key]
+    sharedResults = next
+  }
+  window.dispatchEvent(new CustomEvent('terrain:clear-layer', { detail: { key } }))
+}
+
 export function MapOverlays() {
   const { map } = useMap()
 
@@ -80,6 +121,40 @@ export function MapOverlays() {
     window.addEventListener('terrain:clear-all', handler)
     return () => window.removeEventListener('terrain:clear-all', handler)
   }, [])
+
+  // Handle per-layer clearing — remove only the specified layer's
+  // map layers/sources without touching the rest.
+  useEffect(() => {
+    if (!map) return
+    const handler = (e: Event) => {
+      const { key } = (e as CustomEvent).detail as { key: string }
+      // Map each analysis key to its layer + source IDs
+      const layerMap: Record<string, { layers: string[]; sources: string[] }> = {
+        zones:           { layers: ['search-zones-fill', 'search-zones-outline'], sources: ['search-zones'] },
+        restPoints:      { layers: ['rest-points-circle'], sources: ['rest-points'] },
+        runoff:          { layers: ['runoff-flow-line', 'runoff-pools-fill', 'runoff-flood-line', 'runoff-watersheds-outline'], sources: ['runoff'] },
+        route:           { layers: ['route-alt-line', 'route-primary-line', 'route-fallrisk-fill'], sources: ['route-plan'] },
+        fallRisk:        { layers: ['fallrisk-zones-fill', 'fallrisk-zones-outline'], sources: ['fallrisk-zones'] },
+        corridor:        { layers: ['corridor-paths-secondary', 'corridor-paths-primary', 'corridor-deposition-fill', 'corridor-chokes-circle', 'corridor-terminal-fill', 'corridor-terminal-outline'], sources: ['corridor-paths', 'corridor-deposition', 'corridor-chokes', 'corridor-terminal'] },
+        slope:           { layers: ['slope-bands-fill', 'slope-bands-outline'], sources: ['slope'] },
+        anomaly:         { layers: ['anomaly-zones-fill', 'anomaly-zones-outline'], sources: ['anomaly-zones'] },
+        water:           { layers: ['water-lines-layer', 'water-polygons-fill', 'water-springs-circle'], sources: ['water-features', 'water-springs'] },
+        sentinel:        { layers: ['sentinel-imagery-layer'], sources: ['sentinel-imagery'] },
+        canopy:          { layers: ['canopy-zones-fill', 'canopy-zones-outline'], sources: ['canopy-zones'] },
+        imported:        { layers: ['import-points-circle', 'import-lines-layer', 'import-polys-fill', 'import-polys-outline'], sources: ['imported-features'] },
+      }
+      const entry = layerMap[key]
+      if (!entry) return
+      for (const layerId of entry.layers) {
+        if (map.getLayer(layerId)) map.removeLayer(layerId)
+      }
+      for (const sourceId of entry.sources) {
+        if (map.getSource(sourceId)) map.removeSource(sourceId)
+      }
+    }
+    window.addEventListener('terrain:clear-layer', handler)
+    return () => window.removeEventListener('terrain:clear-layer', handler)
+  }, [map])
 
   useEffect(() => {
     if (!map) return
@@ -366,21 +441,42 @@ export function MapOverlays() {
           ;(map.getSource('fallrisk-zones') as maplibregl.GeoJSONSource).setData(fc)
         } else {
           map.addSource('fallrisk-zones', { type: 'geojson', data: fc })
+          // Fill opacity scales with risk level — higher risk = more visible
           map.addLayer({
             id: 'fallrisk-zones-fill',
             type: 'fill',
             source: 'fallrisk-zones',
             paint: {
-              'fill-color': ['match', ['get', 'level'], 'extreme', '#ff0000', 'high', '#ff6600', 'medium', '#ffaa00', '#ffff00'],
-              'fill-opacity': 0.25,
+              'fill-color': ['match', ['get', 'level'],
+                'extreme', '#ff0000',
+                'high', '#ff6600',
+                'medium', '#ffaa00',
+                '#ffff00'],
+              'fill-opacity': ['interpolate', ['linear'], ['get', 'risk'],
+                0.3, 0.15,
+                0.5, 0.25,
+                0.7, 0.35,
+                1.0, 0.45],
             },
-          })
+          }, 'reference-transportation')
+          // Outline color matches the level color
           map.addLayer({
             id: 'fallrisk-zones-outline',
             type: 'line',
             source: 'fallrisk-zones',
-            paint: { 'line-color': '#ff0000', 'line-width': 1, 'line-opacity': 0.5 },
-          })
+            paint: {
+              'line-color': ['match', ['get', 'level'],
+                'extreme', '#ff0000',
+                'high', '#ff6600',
+                'medium', '#ffaa00',
+                '#ffff00'],
+              'line-width': ['interpolate', ['linear'], ['get', 'risk'],
+                0.3, 1,
+                0.7, 2,
+                1.0, 3],
+              'line-opacity': 0.8,
+            },
+          }, 'reference-transportation')
         }
       }
 
@@ -631,17 +727,85 @@ export function MapOverlays() {
           if (map.getLayer('sentinel-imagery-layer')) map.removeLayer('sentinel-imagery-layer')
           map.removeSource(sourceId)
         }
+        // Cap the source maxzoom to what GIBS actually serves for this layer.
+        // Without this, MapLibre fetches beyond the layer's native zoom and gets
+        // 404s or upscaled tiles — the primary cause of Sentinel-2 tearing.
+        const sentinelMaxZoom = results.sentinel.maxZoom ?? 11
         map.addSource(sourceId, {
           type: 'raster',
           tiles: [results.sentinel.tileUrl],
           tileSize: 256,
+          maxzoom: sentinelMaxZoom,
         })
         map.addLayer({
           id: 'sentinel-imagery-layer',
           type: 'raster',
           source: sourceId,
-          paint: { 'raster-opacity': 0.75 },
+          // Linear resampling for continuous satellite imagery — nearest would
+          // pixelate when overscaled. Fade 0 prevents blending seams between tiles.
+          paint: {
+            'raster-opacity': 0.75,
+            'raster-fade-duration': 0,
+            'raster-resampling': 'linear',
+          },
         }, 'satellite-layer')
+      }
+
+      // --- Canopy Intelligence Layer ---
+      if (results.canopy && results.canopy.zones.length > 0) {
+        const canopyColors: Record<string, string> = {
+          'defoliation': '#e74c3c',     // red — canopy loss
+          'dead-trees': '#8b6914',      // amber — dead/dying
+          'clearing': '#4ea1ff',        // blue — open area
+          'thinning': '#f39c12',        // orange — stressed
+          'healthy-forest': '#27ae60',  // green — healthy
+        }
+
+        const canopyFeatures: Feature<Polygon>[] = results.canopy.zones.map((z, i) => ({
+          type: 'Feature',
+          properties: {
+            zoneType: z.type,
+            severity: z.severity,
+            avgNdvi: z.avgNdvi,
+            avgCanopyHeightM: z.avgCanopyHeightM,
+            areaM2: z.areaM2,
+            description: z.description,
+            color: canopyColors[z.type] || '#888',
+            index: i,
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [z.coords.map((p) => [p.lng, p.lat])],
+          },
+        }))
+
+        const canopyFc: FeatureCollection = { type: 'FeatureCollection', features: canopyFeatures }
+
+        if (map.getSource('canopy-zones')) {
+          ;(map.getSource('canopy-zones') as maplibregl.GeoJSONSource).setData(canopyFc)
+        } else {
+          map.addSource('canopy-zones', { type: 'geojson', data: canopyFc })
+          // Insert below reference labels so roads/place names stay visible
+          map.addLayer({
+            id: 'canopy-zones-fill',
+            type: 'fill',
+            source: 'canopy-zones',
+            paint: {
+              'fill-color': ['get', 'color'],
+              'fill-opacity': ['interpolate', ['linear'], ['get', 'severity'], 0, 0.1, 1, 0.4],
+            },
+          }, 'reference-transportation')
+          map.addLayer({
+            id: 'canopy-zones-outline',
+            type: 'line',
+            source: 'canopy-zones',
+            paint: {
+              'line-color': ['get', 'color'],
+              'line-width': 2,
+              'line-opacity': 0.8,
+            },
+          }, 'reference-transportation')
+        }
       }
 
       // --- Imported KML/KMZ features ---

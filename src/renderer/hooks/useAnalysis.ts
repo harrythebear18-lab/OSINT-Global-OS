@@ -27,6 +27,8 @@ import type {
   WaterResponse,
   SentinelRequest,
   SentinelResponse,
+  CanopyAnalysisRequest,
+  CanopyAnalysisResponse,
   ImportResult,
   RadarData,
   WeatherResponse,
@@ -372,6 +374,30 @@ export function useSentinel() {
       return res
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sentinel search failed')
+      return null
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const clear = useCallback(() => setResult(null), [])
+  return { loading, error, result, run, clear }
+}
+
+export function useCanopy() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<CanopyAnalysisResponse | null>(null)
+
+  const run = useCallback(async (req: CanopyAnalysisRequest) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await window.terrain.canopyAnalysis(req)
+      setResult(res)
+      return res
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Canopy analysis failed')
       return null
     } finally {
       setLoading(false)

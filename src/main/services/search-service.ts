@@ -73,7 +73,9 @@ async function ringProbability(center: LngLat, radiusM: number, walkSpeedMps?: n
 
 export const searchService: SearchService = {
   async generateZones(req: SearchZonesRequest): Promise<SearchZonesResponse> {
-    const { lkp, radii, tripParams } = req
+    const { lkp, radii, tripParams, bounds, mode } = req
+    const analysisMode = mode || 'active-sar'
+    const isLegacy = analysisMode === 'legacy-research'
 
     // If trip params provided, compute radii from them; otherwise use explicit radii
     const effectiveRadii = tripParams ? computeSearchRadii(tripParams) : radii
@@ -83,12 +85,67 @@ export const searchService: SearchService = {
 
     const zones: SearchZone[] = []
 
-    for (const radius of effectiveRadii) {
-      const polygon = createRing(lkp, radius)
-      const probability = await ringProbability(lkp, radius, derived?.walkSpeedMps)
-      zones.push({ radius, polygon, probability })
+    if (isLegacy && bounds) {
+      // LEGACY MODE: bbox-spread probability zones.
+      // Instead of tight LKP rings, create a grid of probability cells across
+      // the bounding box based on terrain passability.
+      const [sw, ne] = bounds
+      const gridCols = 4
+      const gridRows = 4
+      const cellW = (ne.lng - sw.lng) / gridCols
+      const cellH = (ne.lat - sw.lat) / gridRows
+
+      for (let i = 0; i < gridCols; i++) {
+        for (let j = 0; j < gridRows; j++) {
+          const cellSw: LngLat = { lng: sw.lng + i * cellW, lat: sw.lat + j * cellH }
+          const cellNe: LngLat = { lng: sw.lng + (i + 1) * cellW, lat: sw.lat + (j + 1) * cellH }
+          const cellCenter: LngLat = {
+            lng: (cellSw.lng + cellNe.lng) / 2,
+            lat: (cellSw.lat + cellNe.lat) / 2,
+          }
+
+          // Sample terrain passability at cell center
+          const probability = await ringProbability(cellCenter, 0, derived?.walkSpeedMps)
+
+          // Distance from LKP (if available) — mild influence only
+          let lkpFactor = 1.0
+          if (lkp) {
+            const distM = haversineMeters(lkp.lng, lkp.lat, cellCenter.lng, cellCenter.lat)
+            // In legacy mode, LKP distance is a mild modifier, not a hard frame
+            lkpFactor = Math.max(0.3, 1 - distM / 20000) // mild decay over 20km
+          }
+
+          zones.push({
+            radius: 0, // legacy zones are bbox cells, not rings
+            polygon: [
+              cellSw,
+              { lng: cellNe.lng, lat: cellSw.lat },
+              cellNe,
+              { lng: cellSw.lng, lat: cellNe.lat },
+              cellSw,
+            ],
+            probability: probability * lkpFactor,
+          })
+        }
+      }
+    } else {
+      // ACTIVE SAR MODE: tight concentric rings around LKP
+      for (const radius of effectiveRadii) {
+        const polygon = createRing(lkp, radius)
+        const probability = await ringProbability(lkp, radius, derived?.walkSpeedMps)
+        zones.push({ radius, polygon, probability })
+      }
     }
 
     return { zones }
   },
+}
+
+function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number): number {
+  const R = 6371000
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
 }

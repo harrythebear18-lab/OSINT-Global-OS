@@ -61,6 +61,8 @@ export interface SentinelScene {
   bounds: [LngLat, LngLat]
   thumbnail?: string
   isImageOverlay?: boolean
+  /** Max zoom level the tile server supports. */
+  maxZoom?: number
 }
 
 export interface SentinelRequest {
@@ -286,6 +288,8 @@ export interface AnomalyAnalysisRequest {
   /** Standard deviations above which a cell is an anomaly. */
   threshold?: number;
   demZoom?: number;
+  /** Analysis mode. Legacy: lower threshold (more anomalies). Active SAR: higher threshold (only significant). */
+  mode?: AnalysisMode;
 }
 
 export interface AnomalyZone {
@@ -302,6 +306,85 @@ export interface AnomalyZone {
 export interface AnomalyAnalysisResponse {
   zones: AnomalyZone[];
   bounds: [LngLat, LngLat];
+}
+
+/* ------------------------------------------------------------------ */
+/* Canopy Intelligence Layer                                          */
+/* ------------------------------------------------------------------ */
+
+export interface CanopyAnalysisRequest {
+  /** Bounding box of the analysis area [SW, NE]. */
+  bounds: [LngLat, LngLat];
+  /** DEM zoom level (default 12). */
+  demZoom?: number;
+  /** Analysis mode. */
+  mode?: AnalysisMode;
+  /** Optional: override regional canopy height (meters). If not provided,
+   *  the service will reverse-geocode the bbox center and web-search for
+   *  average tree height in that region/biome. */
+  regionalCanopyHeightM?: number;
+  /** Optional: date for NDVI tiles (YYYY-MM-DD). Defaults to yesterday. */
+  date?: string;
+}
+
+/** A single cell in the canopy analysis grid. */
+export interface CanopyCell {
+  /** Center longitude. */
+  lng: number;
+  /** Center latitude. */
+  lat: number;
+  /** Raw DEM elevation (canopy + ground) in meters. */
+  rawElevation: number;
+  /** NDVI value 0-1 (vegetation density). */
+  ndvi: number;
+  /** Estimated canopy height in meters (0 for non-forest). */
+  canopyHeightM: number;
+  /** Corrected ground elevation (rawElevation - canopyHeightM). */
+  groundElevation: number;
+  /** Classification: what's at this cell. */
+  class: 'forest' | 'thinning' | 'bare' | 'water' | 'unknown';
+  /** Defoliation score 0-1 (0 = healthy, 1 = complete defoliation). */
+  defoliation: number;
+  /** Dead tree likelihood 0-1. */
+  deadTreeLikelihood: number;
+}
+
+/** A clustered canopy anomaly zone. */
+export interface CanopyZone {
+  id: string;
+  coords: LngLat[];
+  /** Zone type. */
+  type: 'defoliation' | 'dead-trees' | 'clearing' | 'thinning' | 'healthy-forest';
+  /** Average NDVI in the zone. */
+  avgNdvi: number;
+  /** Average canopy height in the zone. */
+  avgCanopyHeightM: number;
+  /** Area in square meters. */
+  areaM2: number;
+  /** Severity 0-1 (0 = mild, 1 = severe). */
+  severity: number;
+  /** Human-readable description. */
+  description: string;
+}
+
+export interface CanopyAnalysisResponse {
+  /** Grid of canopy cells. */
+  cells: CanopyCell[];
+  /** Clustered anomaly zones. */
+  zones: CanopyZone[];
+  /** Regional canopy height used (meters). */
+  regionalCanopyHeightM: number;
+  /** Region name from reverse geocoding. */
+  regionName: string;
+  /** Biome/ecosystem description from web search. */
+  biomeDescription: string;
+  /** Source of the canopy height estimate. */
+  canopyHeightSource: string;
+  /** Bounds of the analysis. */
+  bounds: [LngLat, LngLat];
+  /** Grid dimensions. */
+  gridWidth: number;
+  gridHeight: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -378,6 +461,10 @@ export interface SearchZonesRequest {
   radii: number[];
   /** Trip parameters — drive zone expansion + probability. */
   tripParams?: TripParams;
+  /** Bounding box [SW, NE]. In legacy mode, used for bbox-spread probability. */
+  bounds?: [LngLat, LngLat];
+  /** Analysis mode. Default: 'active-sar'. */
+  mode?: AnalysisMode;
 }
 
 export interface SearchZone {
@@ -413,6 +500,8 @@ export interface RoutePlanRequest {
   /** Full hiker profile — when provided, overrides tripParams + routePreference
    *  with calibrated values derived from psychology + known anchors. */
   hikerProfile?: HikerProfile
+  /** Analysis mode. Active SAR: single corridor. Legacy: trail network analysis. */
+  mode?: AnalysisMode
 }
 
 /**
@@ -626,6 +715,10 @@ export interface FallRiskRequest {
   tripParams?: TripParams
   /** DEM zoom level (default 12). */
   demZoom?: number
+  /** Analysis mode. In legacy mode, scans full bbox. In active SAR, focuses on corridor. */
+  mode?: AnalysisMode
+  /** Optional corridor route to constrain active-SAR fall risk to. */
+  routeCoords?: LngLat[]
 }
 
 export type FallRiskLevel = 'low' | 'medium' | 'high' | 'extreme'
@@ -717,6 +810,8 @@ export interface RunoffRequest {
   rainfallMm: number
   /** DEM zoom level to use (default 12). */
   demZoom?: number
+  /** Analysis mode. Active SAR: flood search area now. Legacy: historical channeling. */
+  mode?: AnalysisMode
 }
 
 /** A detected water flow path (stream/channel). */
@@ -768,12 +863,31 @@ export interface RunoffResponse {
   rainfallMm: number
 }
 
+/**
+ * Global analysis mode — changes reasoning style across the entire app.
+ *
+ * 'active-sar': Real, time-critical rescue. LKP is real and recent.
+ *   - LKP-centric, tight corridors, trip params matter, weather is critical.
+ *   - Conservative, evidence-driven, high-confidence, no speculation.
+ *
+ * 'legacy-research': Historical, cold-case, exploratory terrain study.
+ *   - LKP is an estimate. Bbox is the primary frame. Terrain-focused.
+ *   - Speculation allowed. Wide-area search. Multi-source OSINT.
+ *   - Anomaly detection, pattern analysis, historical context emphasized.
+ */
+export type AnalysisMode = 'active-sar' | 'legacy-research'
+
 export interface RestPointsRequest {
   lkp: LngLat;
   /** Walk-time limit in hours. */
   maxHours: number;
   /** Trip parameters — drive scoring weights + walk radius. */
   tripParams?: TripParams;
+  /** Bounding box to constrain the search [SW, NE]. If provided, candidates
+   *  are clipped to this area instead of a circular radius around LKP. */
+  bounds?: [LngLat, LngLat];
+  /** Analysis mode — changes scoring behavior. Default: 'active-sar'. */
+  mode?: AnalysisMode;
 }
 
 export interface RestPoint {

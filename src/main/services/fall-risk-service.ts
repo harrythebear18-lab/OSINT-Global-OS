@@ -217,18 +217,16 @@ function clusterRiskZones(
 
       if (cluster.length < 3) continue
 
-      // Bounding box (loop instead of spread to avoid stack overflow on large clusters)
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+      // Compute convex hull of the cluster — follows the actual shape
+      // of the risk area instead of drawing a rectangle that covers
+      // unrelated safe terrain.
+      const hullCells = convexHull(cluster.map((c) => ({ x: c.x, y: c.y })))
       let maxRisk = 0
       for (const c of cluster) {
-        if (c.x < minX) minX = c.x
-        if (c.x > maxX) maxX = c.x
-        if (c.y < minY) minY = c.y
-        if (c.y > maxY) maxY = c.y
         if (c.risk > maxRisk) maxRisk = c.risk
       }
       const level = classifyLevel(maxRisk)
-      const key = `${minX},${minY}`
+      const key = `${cluster[0].x},${cluster[0].y}`
       const scores = componentScores.get(key) ?? { slope: 0, curvature: 0, edge: 0, visibility: 0 }
 
       // Determine reason
@@ -238,14 +236,17 @@ function clusterRiskZones(
       else if (scores.curvature > 0.5) reason = 'Exposed ridge — convex terrain'
       else reason = 'Combined terrain risk'
 
+      // Convert hull cells to lng/lat polygon
+      const coords: LngLat[] = hullCells.map((c) => ({
+        lng: swLng + c.x * lngStep,
+        lat: neLat - c.y * latStep,
+      }))
+      // Close the ring
+      coords.push(coords[0])
+
       zones.push({
         id: `fallrisk-${zoneId++}`,
-        coords: [
-          { lng: swLng + minX * lngStep, lat: neLat - minY * latStep },
-          { lng: swLng + maxX * lngStep, lat: neLat - minY * latStep },
-          { lng: swLng + maxX * lngStep, lat: neLat - maxY * latStep },
-          { lng: swLng + minX * lngStep, lat: neLat - maxY * latStep },
-        ],
+        coords,
         risk: maxRisk,
         level,
         reason,
@@ -258,6 +259,165 @@ function clusterRiskZones(
   }
 
   return zones
+}
+
+/**
+ * Convex hull (Andrew's monotone chain) for a set of grid cells.
+ * Returns the hull vertices in counter-clockwise order.
+ */
+function convexHull(points: { x: number; y: number }[]): { x: number; y: number }[] {
+  if (points.length < 3) return points
+
+  // Sort by x, then by y
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y)
+
+  // Remove duplicates
+  const unique: { x: number; y: number }[] = []
+  for (const p of sorted) {
+    if (unique.length === 0 || unique[unique.length - 1].x !== p.x || unique[unique.length - 1].y !== p.y) {
+      unique.push(p)
+    }
+  }
+
+  if (unique.length < 3) return unique
+
+  const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+
+  // Lower hull
+  const lower: { x: number; y: number }[] = []
+  for (const p of unique) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop()
+    }
+    lower.push(p)
+  }
+
+  // Upper hull
+  const upper: { x: number; y: number }[] = []
+  for (let i = unique.length - 1; i >= 0; i--) {
+    const p = unique[i]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop()
+    }
+    upper.push(p)
+  }
+
+  return lower.slice(0, -1).concat(upper.slice(0, -1))
+}
+
+/**
+ * Merge zones whose centroids are within `maxCellDist` grid cells of each other.
+ * Combines their polygons into one and takes the highest risk score.
+ */
+function mergeNearbyZones(
+  zones: FallRiskZone[],
+  swLng: number, neLat: number,
+  lngStep: number, latStep: number,
+  maxCellDist: number,
+): FallRiskZone[] {
+  if (zones.length < 2) return zones
+
+  // Compute centroid for each zone in grid coordinates
+  const centroids = zones.map((z) => {
+    let sumLng = 0, sumLat = 0
+    for (const c of z.coords) { sumLng += c.lng; sumLat += c.lat }
+    const n = z.coords.length || 1
+    return {
+      lng: sumLng / n,
+      lat: sumLat / n,
+      x: (sumLng / n - swLng) / lngStep,
+      y: (neLat - sumLat / n) / latStep,
+    }
+  })
+
+  // Union-find to group nearby zones
+  const parent = zones.map((_, i) => i)
+  const find = (i: number): number => {
+    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] }
+    return i
+  }
+  const union = (a: number, b: number) => {
+    const ra = find(a), rb = find(b)
+    if (ra !== rb) parent[ra] = rb
+  }
+
+  const maxDistSq = maxCellDist * maxCellDist
+  for (let i = 0; i < zones.length; i++) {
+    for (let j = i + 1; j < zones.length; j++) {
+      const dx = centroids[i].x - centroids[j].x
+      const dy = centroids[i].y - centroids[j].y
+      if (dx * dx + dy * dy <= maxDistSq) {
+        union(i, j)
+      }
+    }
+  }
+
+  // Group zones by their root
+  const groups = new Map<number, number[]>()
+  for (let i = 0; i < zones.length; i++) {
+    const root = find(i)
+    if (!groups.has(root)) groups.set(root, [])
+    groups.get(root)!.push(i)
+  }
+
+  // Merge each group into one zone
+  const merged: FallRiskZone[] = []
+  let id = 0
+  for (const indices of groups.values()) {
+    if (indices.length === 1) {
+      const z = zones[indices[0]]
+      merged.push({ ...z, id: `fallrisk-${id++}` })
+      continue
+    }
+
+    // Combine all coords from all zones in the group
+    const allCoords: LngLat[] = []
+    let maxRisk = 0
+    let bestLevel: FallRiskLevel = 'low'
+    let bestReason = ''
+    let slopeScore = 0, curvatureScore = 0, edgeScore = 0, visibilityScore = 0
+
+    for (const idx of indices) {
+      const z = zones[idx]
+      allCoords.push(...z.coords)
+      if (z.risk > maxRisk) {
+        maxRisk = z.risk
+        bestLevel = z.level
+        bestReason = z.reason
+      }
+      slopeScore = Math.max(slopeScore, z.slopeScore)
+      curvatureScore = Math.max(curvatureScore, z.curvatureScore)
+      edgeScore = Math.max(edgeScore, z.edgeScore)
+      visibilityScore = Math.max(visibilityScore, z.visibilityScore)
+    }
+
+    // Compute convex hull of all combined coords
+    const hullPoints = allCoords.map((c) => ({
+      x: (c.lng - swLng) / lngStep,
+      y: (neLat - c.lat) / latStep,
+    }))
+    const hull = convexHull(hullPoints)
+    const hullCoords: LngLat[] = hull.map((p) => ({
+      lng: swLng + p.x * lngStep,
+      lat: neLat - p.y * latStep,
+    }))
+    hullCoords.push(hullCoords[0]) // close ring
+
+    merged.push({
+      id: `fallrisk-${id++}`,
+      coords: hullCoords,
+      risk: maxRisk,
+      level: bestLevel,
+      reason: bestReason,
+      slopeScore,
+      curvatureScore,
+      edgeScore,
+      visibilityScore,
+    })
+  }
+
+  return merged
 }
 
 function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number): number {
@@ -273,7 +433,9 @@ function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number)
  * Main fall risk analysis.
  */
 export async function analyzeFallRisk(req: FallRiskRequest): Promise<FallRiskResponse> {
-  const { bounds, tripParams, demZoom } = req
+  const { bounds, tripParams, demZoom, mode, routeCoords } = req
+  const analysisMode = mode || 'active-sar'
+  const isActiveSAR = analysisMode === 'active-sar'
   const zoom = demZoom ?? DEFAULT_ZOOM
 
   const { grid: rawGrid, width: rawWidth, height: rawHeight, cellSizeM: rawCellSizeM, swLng, neLat, lngStep: rawLngStep, latStep: rawLatStep } = await loadDemGrid(bounds, zoom)
@@ -329,9 +491,20 @@ export async function analyzeFallRisk(req: FallRiskRequest): Promise<FallRiskRes
   const riskGrid: number[][] = []
   const componentScores = new Map<string, { slope: number; curvature: number; edge: number; visibility: number }>()
 
+  // In active SAR mode with a route, only compute risk near the corridor.
+  // In legacy mode, scan the full bbox (where could someone have fallen anywhere).
+  const corridorMask = isActiveSAR && routeCoords && routeCoords.length > 0
+    ? buildCorridorMask(routeCoords, width, height, swLng, neLat, lngStep, latStep, 200)
+    : null // null = scan everything
+
   for (let y = 0; y < height; y++) {
     const row: number[] = []
     for (let x = 0; x < width; x++) {
+      // Skip cells outside corridor in active SAR mode
+      if (corridorMask && !corridorMask[y]?.[x]) {
+        row.push(0)
+        continue
+      }
       const { risk, slope, curvature, edge, visibility } = computeFallRisk(
         grid, x, y, cellSizeM, visibilityFactor, groundSlipFactor,
       )
@@ -343,11 +516,90 @@ export async function analyzeFallRisk(req: FallRiskRequest): Promise<FallRiskRes
     riskGrid.push(row)
   }
 
-  // Cluster into zones (threshold = 0.4 for medium+ risk)
+  // Cluster into zones
+  // Active SAR: threshold 0.4 (medium+ only — safety critical)
+  // Legacy: threshold 0.3 (include lower risk — exploratory)
+  const clusterThreshold = isActiveSAR ? 0.4 : 0.3
   const zones = clusterRiskZones(
-    riskGrid, 0.4, width, height, grid, cellSizeM,
+    riskGrid, clusterThreshold, width, height, grid, cellSizeM,
     swLng, neLat, lngStep, latStep, componentScores,
   )
 
   return { zones, grid: riskGrid, bounds }
+}
+
+/**
+ * Build a mask of grid cells within `corridorWidthM` of the route polyline.
+ * Used in active SAR mode to constrain fall risk to the route corridor.
+ */
+function buildCorridorMask(
+  routeCoords: LngLat[],
+  width: number, height: number,
+  swLng: number, neLat: number,
+  lngStep: number, latStep: number,
+  corridorWidthM: number,
+): Uint8Array[] {
+  const mask: Uint8Array[] = []
+  for (let y = 0; y < height; y++) {
+    mask.push(new Uint8Array(width))
+  }
+
+  const latPerM = 1 / 111320
+  const corridorDeg = corridorWidthM * latPerM
+
+  // For each route segment, mark cells within corridor width
+  for (let i = 0; i < routeCoords.length - 1; i++) {
+    const a = routeCoords[i]
+    const b = routeCoords[i + 1]
+
+    // Bounding box of segment + corridor
+    const minLng = Math.min(a.lng, b.lng) - corridorDeg
+    const maxLng = Math.max(a.lng, b.lng) + corridorDeg
+    const minLat = Math.min(a.lat, b.lat) - corridorDeg
+    const maxLat = Math.max(a.lat, b.lat) + corridorDeg
+
+    const xStart = Math.max(0, Math.floor((minLng - swLng) / lngStep))
+    const xEnd = Math.min(width - 1, Math.ceil((maxLng - swLng) / lngStep))
+    const yStart = Math.max(0, Math.floor((neLat - maxLat) / latStep))
+    const yEnd = Math.min(height - 1, Math.ceil((neLat - minLat) / latStep))
+
+    for (let y = yStart; y <= yEnd; y++) {
+      for (let x = xStart; x <= xEnd; x++) {
+        const cellLng = swLng + x * lngStep
+        const cellLat = neLat - y * latStep
+        // Distance from point to line segment
+        const dist = pointToSegmentDist(cellLng, cellLat, a.lng, a.lat, b.lng, b.lat, latPerM)
+        if (dist <= corridorWidthM) {
+          mask[y][x] = 1
+        }
+      }
+    }
+  }
+
+  return mask
+}
+
+/** Distance from point to line segment in meters. */
+function pointToSegmentDist(
+  px: number, py: number,
+  ax: number, ay: number,
+  bx: number, by: number,
+  latPerM: number,
+): number {
+  const lngPerM = latPerM / Math.cos((py * Math.PI) / 180)
+  const dx = (bx - ax) / lngPerM
+  const dy = (by - ay) / latPerM
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) {
+    const ddx = (px - ax) / lngPerM
+    const ddy = (py - ay) / latPerM
+    return Math.sqrt(ddx * ddx + ddy * ddy)
+  }
+  let t = (((px - ax) / lngPerM) * dx + ((py - ay) / latPerM) * dy) / lenSq
+  t = Math.max(0, Math.min(1, t))
+  const projX = ax + t * (bx - ax)
+  const projY = ay + t * (by - ay)
+  const ddx = (px - projX) / lngPerM
+  const ddy = (py - projY) / latPerM
+  return Math.sqrt(ddx * ddx + ddy * ddy)
 }

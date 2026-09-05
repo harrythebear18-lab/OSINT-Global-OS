@@ -157,22 +157,30 @@ interface OverpassElement {
 /**
  * Compute water proximity score for a point (0-1, 1 = very close to water).
  * Uses haversine distance to nearest water feature.
+ *
+ * Returns 0 when no water features exist or are too far — do NOT hallucinate
+ * water in deserts or when Overpass fails. A score of 0 means "no water nearby"
+ * which is the correct answer for arid terrain.
  */
 export function waterProximityScore(point: LngLat, features: WaterFeature[], maxDistanceM: number = 500): number {
-  if (features.length === 0) return 0.3 // slight default if no data
+  // No water features at all = no water. Return 0, not a false positive.
+  if (features.length === 0) return 0
 
   let minDist = Infinity
 
   for (const f of features) {
+    // Skip wetlands — they're not drinkable water sources
+    if (f.type === 'wetland') continue
     for (const c of f.coords) {
       const dist = haversineMeters(point.lng, point.lat, c.lng, c.lat)
       minDist = Math.min(minDist, dist)
     }
   }
 
-  if (minDist === Infinity) return 0.3
+  // No drinkable water features found = no water
+  if (minDist === Infinity) return 0
   if (minDist < 50) return 1.0 // right at water's edge
-  if (minDist > maxDistanceM) return 0.2 // far from water
+  if (minDist > maxDistanceM) return 0 // far from water = no water
 
   // Linear falloff
   return 1.0 - (minDist / maxDistanceM) * 0.8

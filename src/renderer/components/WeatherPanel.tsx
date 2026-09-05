@@ -63,7 +63,7 @@ export function WeatherPanel() {
         existing.setTiles([url])
       } else {
         map.addSource('radar-tiles', { type: 'raster', tiles: [url], tileSize: 256 })
-        map.addLayer({ id: 'radar-tiles-layer', type: 'raster', source: 'radar-tiles', paint: { 'raster-opacity': 0.6 } })
+        map.addLayer({ id: 'radar-tiles-layer', type: 'raster', source: 'radar-tiles', paint: { 'raster-opacity': 0.6, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' } })
       }
     } else {
       if (map.getLayer('radar-tiles-layer')) map.removeLayer('radar-tiles-layer')
@@ -85,7 +85,7 @@ export function WeatherPanel() {
         map.removeSource('sat-tiles')
       }
       map.addSource('sat-tiles', { type: 'raster', tiles: [url], tileSize: 256 })
-      map.addLayer({ id: 'sat-tiles-layer', type: 'raster', source: 'sat-tiles', paint: { 'raster-opacity': 0.5 } })
+      map.addLayer({ id: 'sat-tiles-layer', type: 'raster', source: 'sat-tiles', paint: { 'raster-opacity': 0.5, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' } })
     } else {
       if (map.getLayer('sat-tiles-layer')) map.removeLayer('sat-tiles-layer')
       if (map.getSource('sat-tiles')) map.removeSource('sat-tiles')

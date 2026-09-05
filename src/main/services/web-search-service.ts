@@ -12,7 +12,7 @@
  * the user manually pasting data.
  */
 
-import type { LngLat } from '@shared/types'
+import type { LngLat, AnalysisMode } from '@shared/types'
 
 export interface SearchResult {
   source: string
@@ -213,20 +213,25 @@ async function reverseGeocode(lng: number, lat: number): Promise<string | null> 
 export async function webSearch(
   query: string,
   location?: LngLat,
+  mode?: AnalysisMode,
 ): Promise<WebSearchResponse> {
+  const analysisMode = mode || 'active-sar'
+  const isActiveSAR = analysisMode === 'active-sar'
   const results: SearchResult[] = []
   const q = query.toLowerCase().trim()
 
   // Location-based queries
   if (location) {
-    // Always try NWS alerts if we have a location
-    if (q.includes('weather') || q.includes('alert') || q.includes('forecast') || q.includes('storm') || q.includes('rain') || q.includes('snow')) {
+    // ACTIVE SAR: always pull NWS alerts (weather is critical)
+    // LEGACY: only pull if explicitly weather-related
+    const wantNws = isActiveSAR || q.includes('weather') || q.includes('alert') || q.includes('forecast') || q.includes('storm') || q.includes('rain') || q.includes('snow')
+    if (wantNws) {
       const nws = await getNwsAlerts(location.lng, location.lat)
       results.push(...nws)
     }
 
     // Reverse geocode for place context
-    if (q.includes('place') || q.includes('where') || q.includes('location') || q.includes('area')) {
+    if (q.includes('place') || q.includes('where') || q.includes('location') || q.includes('area') || !isActiveSAR) {
       const place = await reverseGeocode(location.lng, location.lat)
       if (place) {
         results.push({
@@ -238,27 +243,51 @@ export async function webSearch(
     }
   }
 
-  // General text search (always run for any query)
+  // General text search
   const [ddg, wiki] = await Promise.all([
     searchDuckDuckGo(query),
     searchWikipedia(query),
   ])
   results.push(...ddg, ...wiki)
 
+  // ACTIVE SAR: prioritize time-critical results (alerts, bulletins, closures)
+  // LEGACY: prioritize historical context, cases, terrain data
+  let sorted = results
+  if (isActiveSAR) {
+    // Sort: NWS alerts first, then DDG, then Wikipedia
+    const priority = (r: SearchResult) => {
+      if (r.source === 'NWS') return 0
+      if (r.source === 'DuckDuckGo') return 1
+      if (r.source === 'Wikipedia') return 2
+      return 3
+    }
+    sorted = [...results].sort((a, b) => priority(a) - priority(b))
+  } else {
+    // Legacy: Wikipedia first (historical context), then DDG, then NWS
+    const priority = (r: SearchResult) => {
+      if (r.source === 'Wikipedia') return 0
+      if (r.source === 'DuckDuckGo') return 1
+      if (r.source === 'Nominatim') return 2
+      if (r.source === 'NWS') return 3
+      return 4
+    }
+    sorted = [...results].sort((a, b) => priority(a) - priority(b))
+  }
+
   // Build context string for LLM injection
   const contextParts: string[] = []
-  for (const r of results.slice(0, 10)) {
+  for (const r of sorted.slice(0, 10)) {
     contextParts.push(`[${r.source}] ${r.title}: ${r.snippet}`)
   }
   const context = contextParts.length > 0
-    ? `Web search results for "${query}":\n${contextParts.join('\n')}`
+    ? `Web search results for "${query}" (${analysisMode} mode):\n${contextParts.join('\n')}`
     : `No web results found for "${query}".`
 
-  return { query, results: results.slice(0, 10), context }
+  return { query, results: sorted.slice(0, 10), context }
 }
 
 /** Quick search — returns just the context string (for LLM injection). */
-export async function quickSearch(query: string, location?: LngLat): Promise<string> {
-  const res = await webSearch(query, location)
+export async function quickSearch(query: string, location?: LngLat, mode?: AnalysisMode): Promise<string> {
+  const res = await webSearch(query, location, mode)
   return res.context ?? `No web results found for "${query}".`
 }

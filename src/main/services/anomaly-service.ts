@@ -213,9 +213,15 @@ function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number)
 }
 
 export async function analyzeAnomalyArea(req: AnomalyAnalysisRequest): Promise<AnomalyAnalysisResponse> {
-  const { bounds, threshold, demZoom } = req
+  const { bounds, threshold, demZoom, mode } = req
+  const analysisMode = mode || 'active-sar'
+  const isLegacy = analysisMode === 'legacy-research'
   const zoom = demZoom ?? DEFAULT_ZOOM
-  const stdThreshold = threshold ?? STD_DEV_THRESHOLD
+
+  // Legacy mode: lower threshold (more anomalies — exploratory)
+  // Active SAR: higher threshold (only significant anomalies — safety focused)
+  const defaultThreshold = isLegacy ? STD_DEV_THRESHOLD * 0.7 : STD_DEV_THRESHOLD
+  const stdThreshold = threshold ?? defaultThreshold
 
   const { grid, width, height, cellSizeM, swLng, neLat, lngStep, latStep } =
     await loadDemGridArea(bounds, zoom)
