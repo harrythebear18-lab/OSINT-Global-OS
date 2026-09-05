@@ -366,6 +366,22 @@ export const SAR_TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_hypotheses',
+      description: 'Generate structured SAR hypotheses with confidence levels, supporting evidence, and suggested search zones. ALWAYS use this when asked to assess the situation, prioritize search areas, or reason about where the missing person might be. Output as a ```hypothesis JSON block.',
+      parameters: {
+        type: 'object',
+        properties: {
+          count: {
+            type: 'number',
+            description: 'Number of hypotheses to generate (default: 3, max: 5).',
+          },
+        },
+      },
+    },
+  },
 ]
 
 // --- Context builder ---
@@ -432,6 +448,38 @@ export function buildSystemPrompt(ctx: MapContext): string {
     '- Prioritize safety-critical information (fall risk, flood risk, impassable terrain).',
     '- When suggesting search areas, consider terrain, weather, and the hiker profile.',
     '- You can analyze satellite images visually — call analyze_satellite_image when visual assessment would help.',
+    '- When asked to assess the situation or suggest where to search, generate structured hypotheses.',
+    '',
+    '## Hypothesis Format',
+    'When generating hypotheses, output a ```hypothesis JSON block at the end of your response:',
+    '```hypothesis',
+    '{',
+    '  "hypotheses": [',
+    '    {',
+    '      "id": "hyp-1",',
+    '      "title": "Short title",',
+    '      "statement": "The missing person likely followed the trail east toward the river crossing.",',
+    '      "confidence": 65,',
+    '      "status": "active",',
+    '      "evidence": [',
+    '        { "source": "route analysis", "finding": "A* path follows trail east", "weight": "strong" },',
+    '        { "source": "slope analysis", "finding": "Gentle slopes (<15°) to the east", "weight": "moderate" }',
+    '      ],',
+    '      "suggestedZones": [',
+    '        {',
+    '          "id": "zone-1",',
+    '          "coords": [{ "lng": -119.5, "lat": 37.8 }, { "lng": -119.4, "lat": 37.8 }, { "lng": -119.4, "lat": 37.7 }, { "lng": -119.5, "lat": 37.7 }],',
+    '          "label": "River crossing area",',
+    '          "confidence": 70,',
+    '          "reasons": ["Gentle terrain", "Water source within 500m", "Trail leads here", "Matches hiker profile"]',
+    '        }',
+    '      ]',
+    '    }',
+    '  ]',
+    '}',
+    '```',
+    'Use real coordinates from the current map context. Generate 2-4 hypotheses with different scenarios.',
+    'Mark old hypotheses as "superseded" when new evidence changes the assessment.',
   )
 
   return parts.join('\n')

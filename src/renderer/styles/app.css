@@ -1992,6 +1992,241 @@ body,
   color: var(--muted);
   border: 1px solid var(--border);
 }
+
+/* ─── Hypothesis Cards ─── */
+.hyp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hyp-panel-empty {
+  padding: 12px;
+  text-align: center;
+}
+
+.hyp-panel-empty .hint {
+  font-size: 10px;
+  margin-top: 6px;
+}
+
+.hyp-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.hyp-card {
+  background: var(--panel-2);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.hyp-card:hover {
+  border-color: var(--text);
+}
+
+.hyp-card-dimmed {
+  opacity: 0.5;
+}
+
+.hyp-card-header {
+  padding: 8px 10px;
+}
+
+.hyp-card-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.hyp-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.hyp-status-badge {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.hyp-confidence-bar {
+  position: relative;
+  height: 16px;
+  background: var(--bg);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.hyp-confidence-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.hyp-confidence-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--text);
+  font-weight: 600;
+  text-shadow: 0 0 4px rgba(0,0,0,0.8);
+}
+
+.hyp-card-statement {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.hyp-card-body {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.hyp-section {
+  margin-bottom: 10px;
+}
+
+.hyp-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.hyp-evidence-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  margin: 3px 0;
+  padding: 4px 6px;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+.hyp-evidence-weight {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hyp-weight-strong { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+.hyp-weight-moderate { background: rgba(250, 204, 21, 0.2); color: #facc15; }
+.hyp-weight-weak { background: rgba(248, 113, 113, 0.2); color: #f87171; }
+
+.hyp-evidence-source {
+  color: var(--accent);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hyp-evidence-finding {
+  color: var(--text);
+  flex: 1;
+}
+
+.hyp-zone-item {
+  background: var(--bg);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 4px 0;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.hyp-zone-item:hover {
+  background: var(--panel);
+}
+
+.hyp-zone-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.hyp-zone-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.hyp-zone-confidence {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.hyp-zone-reasons {
+  margin: 4px 0 0;
+  padding-left: 14px;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.hyp-zone-reasons li {
+  margin: 2px 0;
+}
+
+.hyp-timestamps {
+  font-size: 9px;
+  margin-top: 8px;
+}
+
+/* ─── Explainability Popup (MapLibre) ─── */
+.explain-popup {
+  font-family: inherit;
+  font-size: 12px;
+  max-width: 280px;
+}
+
+.explain-popup-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.explain-popup-hyp {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.explain-popup-confidence {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.explain-popup-reasons-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border);
   border-radius: 3px;

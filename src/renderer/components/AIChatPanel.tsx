@@ -148,6 +148,11 @@ export function AIChatPanel({ tripParams, analysisResults, activeLayers }: AICha
         return updated
       })
 
+      // Dispatch response event for hypothesis parsing
+      if (result.content) {
+        window.dispatchEvent(new CustomEvent('ai:response', { detail: { content: result.content } }))
+      }
+
       // If there are tool calls, surface them for user approval
       if (result.toolCalls && result.toolCalls.length > 0) {
         setPendingToolCalls(result.toolCalls.map((tc: any) => ({
