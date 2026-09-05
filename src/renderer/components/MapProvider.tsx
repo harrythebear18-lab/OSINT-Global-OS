@@ -64,9 +64,9 @@ export function MapProvider({ children }: MapProviderProps) {
     setTerrain3d(next)
     if (next) {
       // Enable 3D terrain with exaggeration and tilt the camera so you can see it
-      map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 })
-      // Ease to an oblique view — pitch 60° gives a dramatic 3D perspective
-      map.easeTo({ pitch: 60, duration: 800 })
+      map.setTerrain({ source: 'terrain-dem', exaggeration: 2.0 })
+      // Ease to an oblique view — pitch 75° gives a dramatic 3D perspective toward the horizon
+      map.easeTo({ pitch: 75, duration: 800 })
     } else {
       map.setTerrain(null)
       // Return to top-down

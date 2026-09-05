@@ -172,6 +172,7 @@ export function MapCanvas() {
       center: [-116.5, 33.8],
       zoom: 9,
       maxZoom: 18, // ~15-20m on scale bar — slightly closer before imagery pixelates
+      maxPitch: 85, // allow near-horizon camera angle in 3D mode
       maxTileCacheSize: 1000,
     })
 
