@@ -1,4 +1,4 @@
-import type { TerrainApi, ClimateApi } from '../preload/index'
+import type { TerrainApi, ClimateApi, AiApi } from '../preload/index'
 
 declare global {
   interface Window {
@@ -6,6 +6,7 @@ declare global {
     climate: ClimateApi
     grid: any
     net: any
+    ai: AiApi
   }
 }
 

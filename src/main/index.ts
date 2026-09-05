@@ -5,6 +5,7 @@ import * as path from 'path'
 import * as os from 'os'
 import { registerIpcHandlers } from './ipc-handlers'
 import { registerClimateIpc } from './climate-ipc'
+import { registerAiIpc } from './ai-ipc'
 
 let mainWindow: BrowserWindow | null = null
 let climateCleanup: (() => void) | null = null
@@ -74,6 +75,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   registerIpcHandlers()
+  registerAiIpc(() => mainWindow)
   createWindow()
   if (mainWindow) {
     climateCleanup = registerClimateIpc(mainWindow)

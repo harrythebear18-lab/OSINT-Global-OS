@@ -352,3 +352,29 @@ const net = {
 export type NetApi = typeof net
 
 contextBridge.exposeInMainWorld('net', net)
+
+// ─── AI / Ollama / CLIP ───
+const ai = {
+  // Ollama
+  health: () => ipcRenderer.invoke(IPC.AI_HEALTH),
+  chat: (req: any) => ipcRenderer.invoke(IPC.AI_CHAT, req),
+  chatStream: (req: any) => ipcRenderer.invoke(IPC.AI_CHAT_STREAM, req),
+  vision: (req: any) => ipcRenderer.invoke(IPC.AI_VISION, req),
+  embed: (req: any) => ipcRenderer.invoke(IPC.AI_EMBED, req),
+  // CLIP
+  clipHealth: () => ipcRenderer.invoke(IPC.AI_CLIP_HEALTH),
+  clipEmbedText: (req: any) => ipcRenderer.invoke(IPC.AI_CLIP_EMBED_TEXT, req),
+  clipEmbedImage: (req: any) => ipcRenderer.invoke(IPC.AI_CLIP_EMBED_IMAGE, req),
+  clipSimilarity: (req: any) => ipcRenderer.invoke(IPC.AI_CLIP_SIMILARITY, req),
+  clipSearch: (req: any) => ipcRenderer.invoke(IPC.AI_CLIP_SEARCH, req),
+  // Streaming token listener
+  onChatToken: (callback: (data: { token: string }) => void) => {
+    const handler = (_e: IpcRendererEvent, data: { token: string }) => callback(data)
+    ipcRenderer.on('ai:chat:token', handler)
+    return () => ipcRenderer.off('ai:chat:token', handler)
+  },
+} as const
+
+export type AiApi = typeof ai
+
+contextBridge.exposeInMainWorld('ai', ai)

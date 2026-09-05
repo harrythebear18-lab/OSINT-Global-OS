@@ -18,6 +18,7 @@ import { CollapsiblePanel } from './components/CollapsiblePanel'
 import { GlobalOverlays, DEFAULT_LAYER_STATE, type GlobalLayerState } from './components/GlobalOverlays'
 import { GlobalLayerPanel } from './components/GlobalLayerPanel'
 import { RightPanel } from './components/RightPanel'
+import { AIChatPanel } from './components/AIChatPanel'
 import { useDemProfile } from './hooks/useAnalysis'
 import type { TripParams } from '@shared/types'
 
@@ -41,6 +42,37 @@ export default function App() {
   const [tripParams, setTripParams] = useState<TripParams>(DEFAULT_TRIP_PARAMS)
   const [globalLayers, setGlobalLayers] = useState<GlobalLayerState>(DEFAULT_LAYER_STATE)
   const [aircraftAltitudeFilter, setAircraftAltitudeFilter] = useState({ min: 0, max: 60000 })
+  const [aiAnalysisResults, setAiAnalysisResults] = useState<Record<string, unknown>>({})
+  const [aiActiveLayers, setAiActiveLayers] = useState<string[]>([])
+
+  // Track analysis results for AI context injection
+  useEffect(() => {
+    const handler = () => {
+      // Read from the shared MapOverlays state via a custom event
+      window.dispatchEvent(new CustomEvent('ai:request-results'))
+    }
+    window.addEventListener('terrain:analysis-results', handler)
+    return () => window.removeEventListener('terrain:analysis-results', handler)
+  }, [])
+
+  // Listen for results response
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail) setAiAnalysisResults(detail)
+    }
+    window.addEventListener('ai:results-response', handler)
+    return () => window.removeEventListener('ai:results-response', handler)
+  }, [])
+
+  // Track active global layers for AI context
+  useEffect(() => {
+    const layers: string[] = []
+    for (const [key, val] of Object.entries(globalLayers)) {
+      if (val === true) layers.push(key)
+    }
+    setAiActiveLayers(layers)
+  }, [globalLayers])
 
   // Clear elevation profile when "Clear Map" is pressed
   useEffect(() => {
@@ -81,6 +113,13 @@ export default function App() {
           </CollapsiblePanel>
           <CollapsiblePanel title="Settings" defaultOpen={false}>
             <SettingsPanel />
+          </CollapsiblePanel>
+          <CollapsiblePanel title="AI Analyst" defaultOpen={false}>
+            <AIChatPanel
+              tripParams={tripParams}
+              analysisResults={aiAnalysisResults}
+              activeLayers={aiActiveLayers}
+            />
           </CollapsiblePanel>
         </Sidebar>
         <main className="map-host">

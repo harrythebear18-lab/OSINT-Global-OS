@@ -105,6 +105,18 @@ export const IPC = {
   NET_QUALITY_GET_HEATMAP: 'net:quality:getHeatmap',
   NET_TRACEROUTE_RUN: 'net:traceroute:runDetailed',
   NET_TOPOLOGY_GET: 'net:topology:getMap',
+
+  // ─── AI / Ollama / CLIP ───
+  AI_HEALTH: 'ai:health',
+  AI_CHAT: 'ai:chat',
+  AI_CHAT_STREAM: 'ai:chat:stream',
+  AI_VISION: 'ai:vision',
+  AI_EMBED: 'ai:embed',
+  AI_CLIP_HEALTH: 'ai:clip:health',
+  AI_CLIP_EMBED_TEXT: 'ai:clip:embed:text',
+  AI_CLIP_EMBED_IMAGE: 'ai:clip:embed:image',
+  AI_CLIP_SIMILARITY: 'ai:clip:similarity',
+  AI_CLIP_SEARCH: 'ai:clip:search',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
