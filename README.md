@@ -6,14 +6,14 @@
 
 ## Status
 
-**v1.0.0 — stable release.** Core SAR analysis pipeline, global OSINT overlays, climate integrity verification, 7-model prediction engine, road-aware routing, and multi-box analysis are live.
+**v1.1.0 — stable release.** Core SAR analysis pipeline, global OSINT overlays, climate integrity verification, 7-model prediction engine, road-aware routing, multi-box analysis, canopy intelligence layer, local AI analyst, and per-layer clear controls are live.
 
 ## What It Does
 
 ### SAR Pipeline (Fall -> Flow -> Find)
 
-1. **Plan a route** — terrain-aware pathfinding between two points, following the terrain like a human would walk it (A* with Tobler's hiking function, route preferences for least-effort / peak-ridge / valley-contour)
-2. **Identify fall risk** — where along that route is someone likely to fall? (slope + curvature + cliff edges + visibility + ground conditions)
+1. **Plan a route** — terrain-aware pathfinding between two points, following the terrain like a human would walk it (A* with Tobler's hiking function, Catmull-Rom spline smoothing, route preferences for least-effort / peak-ridge / valley-contour)
+2. **Identify fall risk** — where along that route is someone likely to fall? (slope + curvature + cliff edges + visibility + ground conditions, convex hull zone shapes)
 3. **Trace the remains corridor** — from a fall point, trace downhill-only where remains would end up (deposition zones, choke points, terminal fan)
 
 ### Hiker Profile Calibration Engine
@@ -34,9 +34,11 @@ Models individual hiker behavior — not just optimal routes, but how a *specifi
 - **Slope analysis** — Horn's method, impassable bands by activity profile (hiking/scrambling/SAR)
 - **Terrain anomalies** — depressions and prominences (caves, sinkholes, ridges) via smoothed residual + std dev clustering
 - **Search zones** — probability-weighted rings from Last Known Point, auto-sized from trip parameters
-- **Rest points** — behavior model scoring slope/water/shelter/distance, adjusted for weather and physiology
+- **Rest points** — behavior model scoring slope/water/shelter/distance, adjusted for weather and physiology. Active SAR mode applies LKP walk-radius constraints even with a bbox; requires at least two strong scoring factors; max 40 points with non-maximum suppression
 - **Rainfall runoff** — flow paths, pooling areas, watershed divides, flash flood risk from DEM + rainfall input
+- **Canopy intelligence** — geolocation-aware forest analysis: reverse-geocodes the bbox center, infers biome and climate, looks up regional average tree height (built-in biome database + web search fallback), fetches MODIS NDVI from NASA GIBS, detects defoliation / dead-tree clusters / clearings / thinning, and corrects ground elevation by subtracting estimated canopy thickness from the DEM (pseudo-LiDAR)
 - **3D terrain** — toggle hillshade and 3D terrain rendering using Terrarium DEM tiles
+- **Per-layer clear** — each analysis layer has its own ✕ clear button that removes only that layer's overlays without resetting the rest of the map
 
 ### Global OSINT Overlays
 
@@ -74,6 +76,17 @@ Stable XYZ tiles — no scene IDs, no 404s, no rate limits, no API key. 12 layer
 | Thermal | Land Surface Temp Day, Land Surface Temp Night |
 | Geostationary | GOES-East (15-min), Himawari-8 (10-min), Meteosat-11 (15-min) |
 | Night | VIIRS Day/Night Band (nighttime lights) |
+
+### Local AI Analyst (Ollama)
+
+The console includes a built-in AI assistant powered by local Ollama models — no cloud, no API keys, full privacy.
+
+- **Text reasoning** — Qwen Coder 7B (or any Ollama model) as the local reasoning module
+- **Vision analysis** — Qwen-VL can analyze the current map view (structures, vegetation, water bodies, burn scars)
+- **Tool calls** — the AI can call analysis tools directly: slope, search zones, rest points, route planning, fall risk, runoff, anomaly detection, canopy intelligence, satellite search, web search, and hypothesis generation
+- **Web search** — DuckDuckGo + Wikipedia + NWS for real-time context (weather alerts, news, road closures, missing person reports)
+- **Mode-aware** — Active SAR mode produces conservative, LKP-driven hypotheses; Legacy/Research mode produces broad, exploratory hypotheses
+- **Chat + Hypotheses tabs** — collapsible bottom bar in the map area; chat for conversation, hypotheses for structured search priorities with confidence levels and suggested zones
 
 ## Physiological Risk Model
 
@@ -128,6 +141,7 @@ All markers — LKP, end point, fall point, weather pin, and custom/imported mar
 - **Space weather:** NOAA SWPC
 - **Wildfire:** NASA FIRMS
 - **Ocean:** Argo, NOAA CO2 moorings
+- **Local AI:** Ollama (Qwen Coder 7B, Qwen-VL) — local reasoning + vision analysis, no cloud
 
 ## Data Sources
 
@@ -210,16 +224,23 @@ To contribute, branch off `develop`, make changes, and open a PR back to `develo
    - Search zones (auto-sized from trip params)
    - Rest points (behavior model)
    - Rainfall runoff (flow paths, flood risk)
+   - Canopy intelligence (defoliation, dead trees, ground height correction)
    - Satellite imagery (NASA GIBS — 12 layers)
+   - Each layer has a ✕ clear button to remove only that overlay
 6. **Incident Analysis (Fall -> Flow -> Find):**
-   - Plan route (terrain-aware A* pathfinding with hiker profile calibration)
+   - Plan route (terrain-aware A* pathfinding with hiker profile calibration + spline smoothing)
    - Click on the green route line to set a fall point
    - Run remains corridor (downhill-only search from fall point)
-7. **Global OSINT overlays** (right panel):
+7. **AI Analyst** (bottom bar):
+   - Chat tab — ask questions, the AI can call any analysis tool
+   - Hypotheses tab — structured search priorities with confidence and zones
+   - Vision analysis — AI can analyze the current map view (requires Qwen-VL)
+   - Web search — AI can search for real-time context (weather, news, road closures)
+8. **Global OSINT overlays** (right panel):
    - Toggle aircraft, weather, seismic, storms, space weather, wildfires, lightning, ocean sensors
    - Climate integrity verification
    - 7-model prediction engine
-8. **Export** results to GeoJSON, KML, or PNG for field use
+9. **Export** results to GeoJSON, KML, or PNG for field use
 
 ## Project Structure
 
@@ -235,12 +256,15 @@ osint-global-os/
 │   │   │   ├── search-service.ts           # Probability-weighted search zones
 │   │   │   ├── rest-service.ts             # Rest point behavior model
 │   │   │   ├── runoff-service.ts           # Rainfall runoff hydrology
-│   │   │   ├── route-service.ts            # A* terrain-aware route planning
-│   │   │   ├── fall-risk-service.ts        # Fall risk identification
+│   │   │   ├── route-service.ts            # A* terrain-aware route planning + spline smoothing
+│   │   │   ├── fall-risk-service.ts        # Fall risk identification + convex hull zones
 │   │   │   ├── remains-corridor-service.ts # Downhill remains search
+│   │   │   ├── canopy-service.ts           # Canopy intelligence (NDVI + DEM correction)
 │   │   │   ├── hiker-profile.ts            # Hiker profile calibration engine
 │   │   │   ├── trip-params.ts              # Physiological model derivation
 │   │   │   ├── sentinel-service.ts         # NASA GIBS satellite imagery
+│   │   │   ├── ollama-service.ts           # Local AI model + tool definitions
+│   │   │   ├── web-search-service.ts       # DuckDuckGo + Wikipedia + NWS search
 │   │   │   ├── water-service.ts            # OSM hydrology via Overpass
 │   │   │   ├── weather-service.ts          # METAR + radar weather
 │   │   │   ├── import-service.ts           # KML/KMZ import
@@ -267,6 +291,7 @@ osint-global-os/
 │   │   │   ├── TripParamsPanel.tsx         # Trip parameter controls
 │   │   │   ├── AnalysisPanel.tsx           # Analysis run controls + export
 │   │   │   ├── IncidentPanel.tsx           # Fall -> Flow -> Find pipeline
+│   │   │   ├── AIChatPanel.tsx             # Local AI analyst chat + tool dispatch
 │   │   │   ├── CaseProfilePanel.tsx        # Case profile loader
 │   │   │   ├── ClimateIntegrityPanel.tsx   # Climate data verification UI
 │   │   │   ├── PredictionPanel.tsx         # 7-model prediction display
