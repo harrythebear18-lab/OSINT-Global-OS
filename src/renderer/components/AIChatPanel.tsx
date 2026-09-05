@@ -180,14 +180,95 @@ export function AIChatPanel({ tripParams, analysisResults, activeLayers }: AICha
     setPendingToolCalls(null)
   }
 
-  const approveToolCall = (idx: number) => {
+  const approveToolCall = async (idx: number) => {
     if (!pendingToolCalls) return
     const tc = pendingToolCalls[idx]
-    // Dispatch a window event that AnalysisPanel or other components can listen for
-    window.dispatchEvent(new CustomEvent('ai:tool-call', { detail: tc }))
-    // Remove from pending
     setPendingToolCalls(pendingToolCalls.filter((_, i) => i !== idx))
-    // Add a message noting the tool was called
+
+    // Handle web_search directly — fetch results and feed back to LLM
+    if (tc.name === 'web_search') {
+      const query = (tc.args as any).query || ''
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: `[Searching web: "${query}"...]`,
+      }])
+
+      try {
+        const center = map?.getCenter()
+        const location = center ? { lng: center.lng, lat: center.lat } : undefined
+        const result = await window.ai.webSearch({ query, location })
+
+        if (result?.context) {
+          // Feed results back to LLM as a follow-up
+          setMessages((prev) => [...prev, {
+            role: 'assistant',
+            content: `**Web search results for "${query}":**\n\n${result.context}`,
+          }])
+
+          // Ask LLM to synthesize the results
+          const followUp = await window.ai.chatStream({
+            messages: [
+              ...messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role, content: m.content })),
+              { role: 'user' as const, content: `I searched the web for "${query}". Here are the results:\n\n${result.context}\n\nBased on these results and the current map context, what are the key findings relevant to the SAR situation?` },
+            ],
+            model: selectedModel,
+            context: buildContext(),
+          })
+
+          if (followUp.content) {
+            setMessages((prev) => [...prev, {
+              role: 'assistant',
+              content: followUp.content,
+            }])
+          }
+        } else {
+          setMessages((prev) => [...prev, {
+            role: 'assistant',
+            content: `[No web results found for "${query}"]`,
+          }])
+        }
+      } catch (err) {
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: `[Web search failed: ${err instanceof Error ? err.message : String(err)}]`,
+        }])
+      }
+      return
+    }
+
+    // Handle analyze_satellite_image — capture map screenshot and send to Qwen-VL
+    if (tc.name === 'analyze_satellite_image') {
+      const query = (tc.args as any).query || 'Analyze this satellite image for any notable features.'
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: `[Capturing map view for visual analysis...]`,
+      }])
+
+      try {
+        // Capture map canvas as base64
+        const canvas = map?.getCanvas()
+        if (canvas) {
+          const dataUrl = canvas.toDataURL('image/png')
+          const base64 = dataUrl.split(',')[1]
+          const result = await window.ai.vision({ imageBase64: base64, prompt: query })
+          if (result?.content) {
+            setMessages((prev) => [...prev, {
+              role: 'assistant',
+              content: `**Satellite image analysis:**\n\n${result.content}`,
+            }])
+          }
+        }
+      } catch (err) {
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: `[Vision analysis failed: ${err instanceof Error ? err.message : String(err)}]`,
+        }])
+      }
+      return
+    }
+
+    // For all other tools, dispatch to analysis components
+    window.dispatchEvent(new CustomEvent('ai:tool-call', { detail: tc }))
     setMessages((prev) => [...prev, {
       role: 'assistant',
       content: `[Tool called: ${tc.name} — dispatching to analysis module...]`,

@@ -117,6 +117,7 @@ export const IPC = {
   AI_CLIP_EMBED_IMAGE: 'ai:clip:embed:image',
   AI_CLIP_SIMILARITY: 'ai:clip:similarity',
   AI_CLIP_SEARCH: 'ai:clip:search',
+  WEB_SEARCH: 'web:search',
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

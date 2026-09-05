@@ -367,6 +367,8 @@ const ai = {
   clipEmbedImage: (req: any) => ipcRenderer.invoke(IPC.AI_CLIP_EMBED_IMAGE, req),
   clipSimilarity: (req: any) => ipcRenderer.invoke(IPC.AI_CLIP_SIMILARITY, req),
   clipSearch: (req: any) => ipcRenderer.invoke(IPC.AI_CLIP_SEARCH, req),
+  // Web search
+  webSearch: (req: any) => ipcRenderer.invoke(IPC.WEB_SEARCH, req),
   // Streaming token listener
   onChatToken: (callback: (data: { token: string }) => void) => {
     const handler = (_e: IpcRendererEvent, data: { token: string }) => callback(data)

@@ -350,6 +350,22 @@ export const SAR_TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: 'Search the web for real-time information: weather alerts, news, place names, road closures, terrain context, historical events, etc. Uses DuckDuckGo, Wikipedia, and NWS APIs. Always use this when you need current/external information that is not in the local analysis results.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query (e.g. "weather alerts near Yosemite", "recent missing person reports California", "road closures Highway 140").',
+          },
+        },
+      },
+    },
+  },
 ]
 
 // --- Context builder ---

@@ -33,6 +33,7 @@ import {
   similarity as clipSimilarity,
   searchByText as clipSearchByText,
 } from './services/clip-service'
+import { webSearch } from './services/web-search-service'
 
 function sendToRenderer(win: BrowserWindow | null, channel: string, data: unknown) {
   if (win && !win.isDestroyed()) {
@@ -138,5 +139,13 @@ export function registerAiIpc(getMainWindow: () => BrowserWindow | null): void {
     candidates: { id: string; path: string }[]
   }) => {
     return await clipSearchByText(req.query, req.candidates)
+  })
+
+  // --- Web search (DuckDuckGo + Wikipedia + NWS) ---
+  ipcMain.handle(IPC.WEB_SEARCH, async (_e, req: {
+    query: string
+    location?: { lng: number; lat: number }
+  }) => {
+    return await webSearch(req.query, req.location)
   })
 }
