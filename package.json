@@ -1,6 +1,6 @@
 {
   "name": "osint-global-os",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Unified global monitoring platform — terrain analysis, weather/climate, seismic, wildfires, aircraft, grid, network, and prediction engine on a MapLibre base.",
   "main": "out/main/index.js",
   "author": "",
@@ -21,7 +21,7 @@
     "appId": "com.osintglobalos.app",
     "productName": "OSINT Global OS",
     "directories": {
-      "output": "release"
+      "output": "E:/osint-builds/release"
     },
     "files": [
       "out/**/*",

@@ -21,7 +21,7 @@ export const IPC = {
   WATER_FETCH: 'water:fetch',
   SENTINEL_SEARCH: 'sentinel:search',
   CANOPY_ANALYSIS: 'canopy:analysis',
-  CROWD_FLOW_ANALYSIS: 'crowd:flow',
+  BEHAVIOR_ENGINE: 'behavior:engine',
   IMPORT_KML: 'import:kml',
   CLEAR_CACHE: 'cache:clear',
   EXPORT_PNG: 'export:png',

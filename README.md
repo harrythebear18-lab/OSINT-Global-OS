@@ -6,7 +6,7 @@
 
 ## Status
 
-**v1.1.0 — stable release.** Core SAR analysis pipeline, global OSINT overlays, climate integrity verification, 7-model prediction engine, road-aware routing, multi-box analysis, canopy intelligence layer, local AI analyst, and per-layer clear controls are live.
+**v1.2.0 — stable release.** Core SAR analysis pipeline, global OSINT overlays, climate integrity verification, 7-model prediction engine, road-aware routing, multi-box analysis, canopy intelligence layer, behavior engine, local AI analyst, privacy mode, and per-layer clear controls are live.
 
 ## What It Does
 
@@ -37,6 +37,7 @@ Models individual hiker behavior — not just optimal routes, but how a *specifi
 - **Rest points** — behavior model scoring slope/water/shelter/distance, adjusted for weather and physiology. Active SAR mode applies LKP walk-radius constraints even with a bbox; requires at least two strong scoring factors; max 40 points with non-maximum suppression
 - **Rainfall runoff** — flow paths, pooling areas, watershed divides, flash flood risk from DEM + rainfall input
 - **Canopy intelligence** — geolocation-aware forest analysis: reverse-geocodes the bbox center, infers biome and climate, looks up regional average tree height (built-in biome database + web search fallback), fetches MODIS NDVI from NASA GIBS, detects defoliation / dead-tree clusters / clearings / thinning, and corrects ground elevation by subtracting estimated canopy thickness from the DEM (pseudo-LiDAR)
+- **Behavior engine** — portable UEBS2-style terrain behavior simulation (logic-first, not animation-first). Runs up to 5,000 agents through terrain physics with group movement (A* pathfinding), hazard avoidance (cliffs, steep slopes), fatigue + rest modeling, and corridor following. Outputs four layers: probability fields (where agents likely are), path predictions (likely group routes with confidence + travel time), decision points (splits, funnels, rest stops, obstacles), and density zones (bottlenecks, congregation, dispersal). Mode-aware: SAR mode supports a live operational tick (3-second refresh cycle); Legacy mode is single-shot
 - **3D terrain** — toggle hillshade and 3D terrain rendering using Terrarium DEM tiles
 - **Per-layer clear** — each analysis layer has its own ✕ clear button that removes only that layer's overlays without resetting the rest of the map
 
@@ -87,6 +88,28 @@ The console includes a built-in AI assistant powered by local Ollama models — 
 - **Web search** — DuckDuckGo + Wikipedia + NWS for real-time context (weather alerts, news, road closures, missing person reports)
 - **Mode-aware** — Active SAR mode produces conservative, LKP-driven hypotheses; Legacy/Research mode produces broad, exploratory hypotheses
 - **Chat + Hypotheses tabs** — collapsible bottom bar in the map area; chat for conversation, hypotheses for structured search priorities with confidence levels and suggested zones
+
+### Privacy Mode
+
+The network telemetry panel (Net, VPN, DNS, Traffic tabs) includes a built-in privacy toggle that masks sensitive data by default:
+
+- **ON by default** — public IPs, hostnames, process names, DNS servers, and connection counts are masked
+- **Type YES to reveal** — turning privacy off requires typing YES in a confirmation dialog, preventing accidental exposure
+- **Persists across sessions** — the preference is saved to localStorage
+- **Warning banner** — visible when privacy is active, reminding users that sensitive data is masked
+
+This protects users who screen-record or share their session from accidentally doxing themselves.
+
+### Platform-Aware Memory Tiers
+
+The app automatically adjusts V8 heap limits and Ollama settings based on platform and available RAM:
+
+| Platform | RAM | Heap Limit | Ollama Context |
+|---|---|---|---|
+| macOS (portable) | <=16 GB | 384 MB | 2048 tokens, 2m keep-alive |
+| macOS (desktop) | >16 GB | 6144 MB | 4096 tokens, 5m keep-alive |
+| Windows (low) | <=16 GB | 2048 MB | 4096 tokens, 5m keep-alive |
+| Windows (high) | >16 GB | 4096 MB | 4096 tokens, 5m keep-alive |
 
 ## Physiological Risk Model
 
@@ -205,6 +228,14 @@ For a portable (no-install) build:
 npm run dist:dir
 ```
 
+### Build a macOS app
+
+```bash
+npm run dist:mac
+```
+
+Produces a `.dmg` in `release/`. macOS builds include memory optimizations for portable rigs (MacBook Air, etc.) — the app automatically detects available RAM and adjusts V8 heap limits and Ollama settings accordingly.
+
 ### Branch structure
 
 - **`main`** — stable release branch, tagged with version numbers
@@ -225,6 +256,7 @@ To contribute, branch off `develop`, make changes, and open a PR back to `develo
    - Rest points (behavior model)
    - Rainfall runoff (flow paths, flood risk)
    - Canopy intelligence (defoliation, dead trees, ground height correction)
+   - Behavior engine (group movement simulation, probability fields, decision points)
    - Satellite imagery (NASA GIBS — 12 layers)
    - Each layer has a ✕ clear button to remove only that overlay
 6. **Incident Analysis (Fall -> Flow -> Find):**
@@ -260,6 +292,7 @@ osint-global-os/
 │   │   │   ├── fall-risk-service.ts        # Fall risk identification + convex hull zones
 │   │   │   ├── remains-corridor-service.ts # Downhill remains search
 │   │   │   ├── canopy-service.ts           # Canopy intelligence (NDVI + DEM correction)
+│   │   │   ├── behavior-engine.ts          # UEBS2-style terrain behavior simulation
 │   │   │   ├── hiker-profile.ts            # Hiker profile calibration engine
 │   │   │   ├── trip-params.ts              # Physiological model derivation
 │   │   │   ├── sentinel-service.ts         # NASA GIBS satellite imagery

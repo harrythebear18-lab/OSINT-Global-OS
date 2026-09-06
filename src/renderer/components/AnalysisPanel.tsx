@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMap } from '../hooks/useMap'
-import { useDemProfile, useSearchZones, useRestPoints, useRunoff, useSlopeAnalysis, useAnomalyAnalysis, useExport, useWater, useSentinel, useImportKml, useCanopy, useCrowdFlow } from '../hooks/useAnalysis'
+import { useDemProfile, useSearchZones, useRestPoints, useRunoff, useSlopeAnalysis, useAnomalyAnalysis, useExport, useWater, useSentinel, useImportKml, useCanopy, useBehaviorEngine } from '../hooks/useAnalysis'
 import { setAnalysisResults, clearAnalysisLayer } from './MapOverlays'
 import type { LngLat, TripParams, AnalysisMode } from '@shared/types'
 import { computeBounds } from '@shared/types'
@@ -22,7 +22,7 @@ interface AnalysisPanelProps {
  *  - Line = for elevation profiles (not area-based).
  */
 export function AnalysisPanel({ tripParams, mode = 'active-sar' }: AnalysisPanelProps) {
-  const { selection, selections, map, lkp } = useMap()
+  const { selection, selections, map, lkp, endPoint } = useMap()
   const profileHook = useDemProfile()
   const zonesHook = useSearchZones()
   const restHook = useRestPoints()
@@ -34,13 +34,13 @@ export function AnalysisPanel({ tripParams, mode = 'active-sar' }: AnalysisPanel
   const sentinelHook = useSentinel()
   const importHook = useImportKml()
   const canopyHook = useCanopy()
-  const crowdHook = useCrowdFlow()
+  const behaviorHook = useBehaviorEngine()
   const [rainfallMm, setRainfallMm] = useState(50)
   const [activityProfile, setActivityProfile] = useState<'hiking' | 'scrambling' | 'sar'>('hiking')
   const [gibsLayerId, setGibsLayerId] = useState('modis-true-color')
   const [canopyHeightOverride, setCanopyHeightOverride] = useState<string>('')
-  const [crowdType, setCrowdType] = useState<'evacuation' | 'festival' | 'hiking-group' | 'panic'>('hiking-group')
-  const [agentCount, setAgentCount] = useState(200)
+  const [behaviorAgents, setBehaviorAgents] = useState(500)
+  const [behaviorLiveTick, setBehaviorLiveTick] = useState(false)
 
   /** Clear a single analysis layer without resetting the rest of the map */
   const clearLayer = (key: string, hookClear?: () => void) => {
@@ -206,23 +206,35 @@ export function AnalysisPanel({ tripParams, mode = 'active-sar' }: AnalysisPanel
     }
   }
 
-  const runCrowdFlow = async () => {
+  const runBehavior = async () => {
     const bounds = getBounds()
     if (!bounds) return
     const sourcePoints: LngLat[] = []
     if (lkp) sourcePoints.push(lkp)
-    const res = await crowdHook.run({
+    const res = await behaviorHook.run({
       bounds,
       sourcePoints: sourcePoints.length > 0 ? sourcePoints : undefined,
-      agentCount,
-      crowdType,
+      destination: endPoint ?? undefined,
+      agentCount: behaviorAgents,
       tripParams,
       mode,
     })
     if (res) {
-      setAnalysisResults({ crowdFlow: res })
+      setAnalysisResults({ behavior: res })
     }
   }
+
+  // SAR mode: slow operational tick that re-runs the engine every 3 seconds
+  // Legacy mode: single-shot, no tick
+  useEffect(() => {
+    if (!behaviorLiveTick) return
+    if (mode !== 'active-sar') return
+    if (!behaviorHook.result) return
+    const interval = setInterval(() => {
+      runBehavior()
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [behaviorLiveTick, mode, behaviorHook.result, behaviorAgents])
 
   const runImport = async () => {
     const res = await importHook.run()
@@ -544,44 +556,50 @@ export function AnalysisPanel({ tripParams, mode = 'active-sar' }: AnalysisPanel
         )}
       </div>
 
-      {/* Crowd Flow Simulation */}
+      {/* Behavior Engine */}
       <div className="analysis-item">
         <div className="analysis-row">
-          <span className={hasArea ? '' : 'muted'}>Crowd Flow</span>
-          <button className="run-btn" onClick={runCrowdFlow} disabled={!hasArea || crowdHook.loading}>
-            {crowdHook.loading ? '...' : 'Run'}
+          <span className={hasArea ? '' : 'muted'}>Behavior Engine</span>
+          <button className="run-btn" onClick={runBehavior} disabled={!hasArea || behaviorHook.loading}>
+            {behaviorHook.loading ? '...' : 'Run'}
           </button>
-          {crowdHook.result && <button className="clear-layer-btn" onClick={() => clearLayer('crowdFlow', crowdHook.clear)}>✕</button>}
+          {behaviorHook.result && <button className="clear-layer-btn" onClick={() => { setBehaviorLiveTick(false); clearLayer('behavior', behaviorHook.clear) }}>✕</button>}
         </div>
         <p className="analysis-hint muted">
-          Terrain-driven crowd simulation. Agents follow slope gradients, density pressure, and crowd-type behavior.
+          Terrain-driven behavior simulation. Predicts group paths, decision points, density zones, and probability fields.
         </p>
-        <div className="rest-mode-toggle">
-          {(['evacuation', 'festival', 'hiking-group', 'panic'] as const).map((t) => (
-            <button
-              key={t}
-              className={`mode-btn ${crowdType === t ? 'active' : ''}`}
-              onClick={() => setCrowdType(t)}
-            >
-              {t === 'hiking-group' ? 'hiking' : t}
-            </button>
-          ))}
-        </div>
         <div className="rainfall-slider">
-          <label className="param-label">Agents: {agentCount}</label>
+          <label className="param-label">Agents: {behaviorAgents}</label>
           <input
             type="range"
             min="50"
-            max="500"
+            max="5000"
             step="50"
-            value={agentCount}
-            onChange={(e) => setAgentCount(parseInt(e.target.value))}
+            value={behaviorAgents}
+            onChange={(e) => setBehaviorAgents(parseInt(e.target.value))}
           />
         </div>
-        {crowdHook.error && <p className="analysis-error">{crowdHook.error}</p>}
-        {crowdHook.result && (
+        {lkp && <p className="analysis-hint">Source: LKP</p>}
+        {endPoint && <p className="analysis-hint">Destination: End point</p>}
+        {!endPoint && <p className="analysis-hint muted">No destination set — agents will follow terrain corridors</p>}
+        {mode === 'active-sar' && behaviorHook.result && (
+          <div className="rest-mode-toggle">
+            <button
+              className={`mode-btn ${behaviorLiveTick ? 'active' : ''}`}
+              onClick={() => setBehaviorLiveTick(!behaviorLiveTick)}
+              title="SAR mode: refresh predictions every 3 seconds as terrain state evolves"
+            >
+              {behaviorLiveTick ? 'Live tick ON' : 'Live tick OFF'}
+            </button>
+          </div>
+        )}
+        {mode === 'legacy-research' && (
+          <p className="analysis-hint muted">Legacy mode: single-shot prediction (no live tick)</p>
+        )}
+        {behaviorHook.error && <p className="analysis-error">{behaviorHook.error}</p>}
+        {behaviorHook.result && (
           <p className="analysis-result">
-            {crowdHook.result.timesteps.length} frames | {crowdHook.result.bottlenecks.length} bottlenecks | {crowdHook.result.congregationZones.length} congregation zones | {crowdHook.result.flowCorridors.length} flow corridors
+            {behaviorHook.result.paths.length} paths | {behaviorHook.result.decisionPoints.length} decision points | {behaviorHook.result.densityZones.length} density zones | {behaviorHook.result.probabilityField.length} probability cells
           </p>
         )}
       </div>

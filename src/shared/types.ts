@@ -906,82 +906,85 @@ export interface RestPointsResponse {
   points: RestPoint[];
 }
 
-// ─── Crowd Flow Simulation ───────────────────────────────────────────
+// ─── Behavior Engine (portable UEBS2-style terrain behavior simulation) ──
 
-export type CrowdType = 'evacuation' | 'festival' | 'hiking-group' | 'panic';
-
-export interface CrowdFlowRequest {
+export interface BehaviorEngineRequest {
   bounds: [LngLat, LngLat];
-  /** Source points where agents spawn. If empty, uses LKP or bbox edges. */
+  /** Source points where agents originate. Falls back to LKP or bbox center. */
   sourcePoints?: LngLat[];
-  /** Optional destination (evacuation exit, event site, etc.) */
+  /** Destination the group is heading toward (if any). */
   destination?: LngLat;
-  /** Number of simulated agents. Default: 200, max: 500. */
+  /** Number of agents to simulate. Default: 100, max: 500. */
   agentCount?: number;
-  /** Simulation timesteps. Default: 100, max: 200. */
+  /** Simulation timesteps. Default: 80, max: 150. */
   timesteps?: number;
-  /** Crowd behavior type. */
-  crowdType?: CrowdType;
-  /** Trip params for fatigue model. */
+  /** Trip parameters for fatigue model. */
   tripParams?: TripParams;
   /** Analysis mode. */
   mode?: AnalysisMode;
+  /** Whether to use existing hazard layers (slope, fall risk, water) for avoidance. Default: true. */
+  useHazards?: boolean;
 }
 
-export interface AgentState {
+/** A predicted group path through terrain. */
+export interface BehaviorPath {
+  id: string;
+  coords: { lng: number; lat: number }[];
+  /** 0-1 confidence in this path. */
+  confidence: number;
+  /** Estimated travel time in hours. */
+  estimatedHours: number;
+  /** Number of agents likely to take this path. */
+  agentCount: number;
+  /** Path type. */
+  type: 'primary' | 'alternate' | 'split' | 'flee';
+}
+
+/** A decision point — where the group splits, merges, stops, or funnels. */
+export interface BehaviorDecisionPoint {
+  id: string;
   lng: number;
   lat: number;
-  /** 0-1 fatigue level. */
-  fatigue: number;
-  /** Current speed in m/s. */
-  speed: number;
-  /** Whether this agent is a leader. */
-  leader: boolean;
-}
-
-export interface CrowdTimestep {
-  agents: AgentState[];
-  /** Max density value this timestep (for color scaling). */
-  maxDensity: number;
-}
-
-export interface CrowdBottleneck {
-  id: string;
-  coords: { lng: number; lat: number }[];
-  /** 0-1 severity — higher = more dangerous bottleneck. */
-  severity: number;
-  /** Estimated flow rate (agents per timestep through this bottleneck). */
-  flowRate: number;
+  /** What happens here. */
+  type: 'split' | 'merge' | 'rest' | 'funnel' | 'obstacle' | 'destination';
+  /** 0-1 significance. */
+  significance: number;
+  /** Human-readable reason. */
   reason: string;
+  /** Number of agents affected. */
+  agentCount: number;
 }
 
-export interface CrowdCongregationZone {
+/** A density zone — where pressure builds up. */
+export interface BehaviorDensityZone {
   id: string;
   coords: { lng: number; lat: number }[];
-  /** 0-1 density — higher = more people聚集. */
+  /** 0-1 density. */
   density: number;
-  /** Estimated number of people. */
+  /** Estimated agent count. */
   estimatedCount: number;
-  type: 'rest' | 'converge' | 'trapped' | 'dispersal';
+  /** Type of density zone. */
+  type: 'bottleneck' | 'congregation' | 'dispersal' | 'trapped';
 }
 
-export interface CrowdFlowCorridor {
-  id: string;
-  coords: { lng: number; lat: number }[];
-  /** 0-1 volume — higher = more flow. */
-  volume: number;
-  /** Average direction in degrees (0=North). */
-  direction: number;
+/** A probability field cell — likelihood of agent presence. */
+export interface BehaviorProbabilityCell {
+  lng: number;
+  lat: number;
+  /** 0-1 probability of agent presence at end of simulation. */
+  probability: number;
 }
 
-export interface CrowdFlowResponse {
-  /** All timesteps for animation. */
-  timesteps: CrowdTimestep[];
-  bottlenecks: CrowdBottleneck[];
-  congregationZones: CrowdCongregationZone[];
-  flowCorridors: CrowdFlowCorridor[];
+export interface BehaviorEngineResponse {
+  /** Predicted paths the group would take. */
+  paths: BehaviorPath[];
+  /** Decision points along the paths. */
+  decisionPoints: BehaviorDecisionPoint[];
+  /** Density zones where pressure builds. */
+  densityZones: BehaviorDensityZone[];
+  /** Probability field — grid cells with presence likelihood. */
+  probabilityField: BehaviorProbabilityCell[];
   bounds: [LngLat, LngLat];
   agentCount: number;
   timestepsCount: number;
-  crowdType: CrowdType;
 }

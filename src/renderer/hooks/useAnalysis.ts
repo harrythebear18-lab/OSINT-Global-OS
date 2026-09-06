@@ -29,8 +29,8 @@ import type {
   SentinelResponse,
   CanopyAnalysisRequest,
   CanopyAnalysisResponse,
-  CrowdFlowRequest,
-  CrowdFlowResponse,
+  BehaviorEngineRequest,
+  BehaviorEngineResponse,
   ImportResult,
   RadarData,
   WeatherResponse,
@@ -410,20 +410,20 @@ export function useCanopy() {
   return { loading, error, result, run, clear }
 }
 
-export function useCrowdFlow() {
+export function useBehaviorEngine() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<CrowdFlowResponse | null>(null)
+  const [result, setResult] = useState<BehaviorEngineResponse | null>(null)
 
-  const run = useCallback(async (req: CrowdFlowRequest) => {
+  const run = useCallback(async (req: BehaviorEngineRequest) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await window.terrain.crowdFlow(req)
+      const res = await window.terrain.behaviorEngine(req)
       setResult(res)
       return res
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Crowd flow simulation failed')
+      setError(e instanceof Error ? e.message : 'Behavior engine failed')
       return null
     } finally {
       setLoading(false)
