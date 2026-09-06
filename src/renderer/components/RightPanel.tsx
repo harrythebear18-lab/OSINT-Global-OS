@@ -72,6 +72,34 @@ export function RightPanel() {
 
  const [collapsed, setCollapsed] = useState(false)
 
+ const [privacyMode, setPrivacyMode] = useState(() => {
+   try { return localStorage.getItem('osint-privacy-mode') !== 'false' } catch { return true }
+ })
+
+ const [showPrivacyConfirm, setShowPrivacyConfirm] = useState(false)
+ const [confirmText, setConfirmText] = useState('')
+
+ const togglePrivacy = () => {
+   if (privacyMode) {
+     // Turning OFF — require confirmation
+     setShowPrivacyConfirm(true)
+     setConfirmText('')
+     return
+   }
+   // Turning ON — no confirmation needed
+   setPrivacyMode(true)
+   try { localStorage.setItem('osint-privacy-mode', 'true') } catch { /* ignore */ }
+ }
+
+ const confirmPrivacyOff = () => {
+   if (confirmText.trim().toUpperCase() === 'YES') {
+     setPrivacyMode(false)
+     try { localStorage.setItem('osint-privacy-mode', 'false') } catch { /* ignore */ }
+     setShowPrivacyConfirm(false)
+     setConfirmText('')
+   }
+ }
+
  const climate = useClimateData()
 
  const grid = useGridData()
@@ -146,6 +174,58 @@ export function RightPanel() {
 
  </div>
 
+ {/* Privacy toggle + warning */}
+ <div className="rp-privacy-bar">
+   <button
+     className={`rp-privacy-btn ${privacyMode ? 'active' : ''}`}
+     onClick={togglePrivacy}
+     title="Toggle sensitive data masking. Use when screen-recording or sharing."
+   >
+     {privacyMode ? '\u{1F6E1} Privacy ON' : '\u{1F441} Privacy OFF'}
+   </button>
+ </div>
+ {privacyMode && !showPrivacyConfirm && (
+   <div className="rp-privacy-warning">
+     Sensitive network data is masked. IPs, hostnames, and process names are hidden.
+   </div>
+ )}
+ {showPrivacyConfirm && (
+   <div className="rp-privacy-confirm">
+     <div className="rp-privacy-confirm-title">\u26A0 Reveal Sensitive Data?</div>
+     <div className="rp-privacy-confirm-text">
+       This will expose your public IP, ISP, network connections, DNS servers, and process names.
+       If you are screen-recording or sharing, this could expose personal data.
+     </div>
+     <div className="rp-privacy-confirm-hint">
+       Type <strong>YES</strong> to confirm:
+     </div>
+     <input
+       className="rp-privacy-confirm-input"
+       type="text"
+       value={confirmText}
+       onChange={(e) => setConfirmText(e.target.value)}
+       onKeyDown={(e) => { if (e.key === 'Enter') confirmPrivacyOff() }}
+       placeholder="Type YES..."
+       autoFocus
+     />
+     <div className="rp-privacy-confirm-actions">
+       <button
+         className="rp-privacy-confirm-yes"
+         onClick={confirmPrivacyOff}
+         disabled={confirmText.trim().toUpperCase() !== 'YES'}
+       >
+         Reveal
+       </button>
+       <button
+         className="rp-privacy-confirm-no"
+         onClick={() => { setShowPrivacyConfirm(false); setConfirmText('') }}
+       >
+         Cancel
+       </button>
+     </div>
+   </div>
+ )}
+
  {/* Tab content */}
 
  <div className="rp-content">
@@ -170,17 +250,17 @@ export function RightPanel() {
 
  {tab === 'energy' && <EnergyTab grid={grid} />}
 
- {tab === 'net' && <NetTab net={net} />}
+ {tab === 'net' && <NetTab net={net} privacy={privacyMode} />}
 
  {tab === 'health' && <HealthTab net={net} />}
 
- {tab === 'vpn' && <VPNTab net={net} />}
+ {tab === 'vpn' && <VPNTab net={net} privacy={privacyMode} />}
 
  {tab === 'speed' && <SpeedTab net={net} />}
 
- {tab === 'dns' && <DNSTab net={net} />}
+ {tab === 'dns' && <DNSTab net={net} privacy={privacyMode} />}
 
- {tab === 'traffic' && <TrafficTab net={net} />}
+ {tab === 'traffic' && <TrafficTab net={net} privacy={privacyMode} />}
 
  </div>
 
@@ -926,7 +1006,7 @@ function EnergyTab({ grid }: { grid: ReturnType<typeof useGridData> }) {
 
 }
 
-function NetTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
+function NetTab({ net, privacy = false }: { net: ReturnType<typeof useNetworkData>; privacy?: boolean }) {
 
  const connections = net.netUpdate?.connections ?? []
 
@@ -972,15 +1052,15 @@ function NetTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  <div className="rp-station-info">
 
- <div className="rp-station-name">{c.remoteAddress}:{c.remotePort}</div>
+ <div className="rp-station-name">{maskIP(c.remoteAddress, privacy)}:{privacy ? '\u2014' : c.remotePort}</div>
 
- <div className="rp-station-meta">{c.protocol} \u00B7 {c.processName || 'unknown'} \u00B7 {c.state || ''}</div>
+ <div className="rp-station-meta">{c.protocol} \u00B7 {mask(c.processName, privacy, 'unknown')} \u00B7 {c.state || ''}</div>
 
  </div>
 
  {c.geoLocation && (
 
- <div className="rp-station-coords">{c.geoLocation.city}, {c.geoLocation.country}</div>
+ <div className="rp-station-coords">{privacy ? '\u2014, \u2014' : `${c.geoLocation.city}, ${c.geoLocation.country}`}</div>
 
  )}
 
@@ -1070,7 +1150,7 @@ function HealthTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
 }
 
-function VPNTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
+function VPNTab({ net, privacy = false }: { net: ReturnType<typeof useNetworkData>; privacy?: boolean }) {
 
  const v = net.vpn
  const [refreshing, setRefreshing] = useState(false)
@@ -1102,13 +1182,13 @@ function VPNTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  <div className="rip-pred-card-row"><span className="rip-muted">Connected:</span><strong style={{ color: v.connected ? '#10b981' : '#ef4444' }}>{v.connected ? 'YES' : 'NO'}</strong></div>
 
- {v.publicIP && <div className="rip-pred-card-row"><span className="rip-muted">Public IP:</span><strong>{v.publicIP}</strong></div>}
+ {v.publicIP && <div className="rip-pred-card-row"><span className="rip-muted">Public IP:</span><strong>{maskIP(v.publicIP, privacy)}</strong></div>}
 
- {v.isp && <div className="rip-pred-card-row"><span className="rip-muted">ISP:</span><strong>{v.isp}</strong></div>}
+ {v.isp && <div className="rip-pred-card-row"><span className="rip-muted">ISP:</span><strong>{mask(v.isp, privacy)}</strong></div>}
 
- {v.country && <div className="rip-pred-card-row"><span className="rip-muted">Country:</span><strong>{v.country}</strong></div>}
+ {v.country && <div className="rip-pred-card-row"><span className="rip-muted">Country:</span><strong>{mask(v.country, privacy)}</strong></div>}
 
- {v.adapter && <div className="rip-pred-card-row"><span className="rip-muted">Adapter:</span><strong>{v.adapter}</strong></div>}
+ {v.adapter && <div className="rip-pred-card-row"><span className="rip-muted">Adapter:</span><strong>{mask(v.adapter, privacy)}</strong></div>}
 
  </div>
 
@@ -1203,7 +1283,7 @@ function SpeedTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
 }
 
-function DNSTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
+function DNSTab({ net, privacy = false }: { net: ReturnType<typeof useNetworkData>; privacy?: boolean }) {
 
  const [results, setResults] = useState<any[]>([])
  const [running, setRunning] = useState(false)
@@ -1252,9 +1332,9 @@ function DNSTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  <div className="rp-station-info">
 
- <div className="rp-station-name">{r.server}</div>
+ <div className="rp-station-name">{mask(r.server, privacy)}</div>
 
- <div className="rp-station-meta">{r.ip} \u00B7 {r.latency}ms</div>
+ <div className="rp-station-meta">{maskIP(r.ip, privacy)} \u00B7 {r.latency}ms</div>
 
  </div>
 
@@ -1284,7 +1364,7 @@ function DNSTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
 }
 
-function TrafficTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
+function TrafficTab({ net, privacy = false }: { net: ReturnType<typeof useNetworkData>; privacy?: boolean }) {
 
  const traffic = net.traffic
 
@@ -1306,9 +1386,9 @@ function TrafficTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 
  <span className="rip-muted">{new Date(t.timestamp).toLocaleTimeString()}</span>
 
- <span>Total: <strong>{t.totalConnections ?? t.total ?? '-'}</strong></span>
+ <span>Total: <strong>{privacy ? '\u2014' : (t.totalConnections ?? t.total ?? '-')}</strong></span>
 
- <span>Active: <strong>{t.activeConnections ?? t.active ?? '-'}</strong></span>
+ <span>Active: <strong>{privacy ? '\u2014' : (t.activeConnections ?? t.active ?? '-')}</strong></span>
 
  </div>
 
@@ -1327,6 +1407,26 @@ function TrafficTab({ net }: { net: ReturnType<typeof useNetworkData> }) {
 }
 
 // --- Shared small components ---
+
+/** Mask a string when privacy mode is on. Returns a placeholder. */
+function mask(value: string | undefined | null, privacy: boolean, placeholder = '\u2014'): string {
+  if (privacy) return placeholder
+  return value ?? placeholder
+}
+
+/** Mask an IP address — shows only last octet when privacy is on. */
+function maskIP(ip: string | undefined | null, privacy: boolean): string {
+  if (!ip) return '\u2014'
+  if (privacy) {
+    // Show only the last octet for IPv4, or 'hidden' for IPv6
+    if (ip.includes(':') && ip.includes('.')) {
+      const parts = ip.split('.')
+      return `xxx.xxx.xxx.${parts[parts.length - 1] ?? '?'}`
+    }
+    return '[hidden]'
+  }
+  return ip
+}
 
 function StatCard({ label, value }: { label: string; value: any }) {
 

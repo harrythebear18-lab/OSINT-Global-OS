@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMap } from '../hooks/useMap'
-import { useDemProfile, useSearchZones, useRestPoints, useRunoff, useSlopeAnalysis, useAnomalyAnalysis, useExport, useWater, useSentinel, useImportKml, useCanopy } from '../hooks/useAnalysis'
+import { useDemProfile, useSearchZones, useRestPoints, useRunoff, useSlopeAnalysis, useAnomalyAnalysis, useExport, useWater, useSentinel, useImportKml, useCanopy, useCrowdFlow } from '../hooks/useAnalysis'
 import { setAnalysisResults, clearAnalysisLayer } from './MapOverlays'
 import type { LngLat, TripParams, AnalysisMode } from '@shared/types'
 import { computeBounds } from '@shared/types'
@@ -34,10 +34,13 @@ export function AnalysisPanel({ tripParams, mode = 'active-sar' }: AnalysisPanel
   const sentinelHook = useSentinel()
   const importHook = useImportKml()
   const canopyHook = useCanopy()
+  const crowdHook = useCrowdFlow()
   const [rainfallMm, setRainfallMm] = useState(50)
   const [activityProfile, setActivityProfile] = useState<'hiking' | 'scrambling' | 'sar'>('hiking')
   const [gibsLayerId, setGibsLayerId] = useState('modis-true-color')
   const [canopyHeightOverride, setCanopyHeightOverride] = useState<string>('')
+  const [crowdType, setCrowdType] = useState<'evacuation' | 'festival' | 'hiking-group' | 'panic'>('hiking-group')
+  const [agentCount, setAgentCount] = useState(200)
 
   /** Clear a single analysis layer without resetting the rest of the map */
   const clearLayer = (key: string, hookClear?: () => void) => {
@@ -200,6 +203,24 @@ export function AnalysisPanel({ tripParams, mode = 'active-sar' }: AnalysisPanel
     const res = await canopyHook.run({ bounds, mode, regionalCanopyHeightM: override })
     if (res) {
       setAnalysisResults({ canopy: res })
+    }
+  }
+
+  const runCrowdFlow = async () => {
+    const bounds = getBounds()
+    if (!bounds) return
+    const sourcePoints: LngLat[] = []
+    if (lkp) sourcePoints.push(lkp)
+    const res = await crowdHook.run({
+      bounds,
+      sourcePoints: sourcePoints.length > 0 ? sourcePoints : undefined,
+      agentCount,
+      crowdType,
+      tripParams,
+      mode,
+    })
+    if (res) {
+      setAnalysisResults({ crowdFlow: res })
     }
   }
 
@@ -520,6 +541,48 @@ export function AnalysisPanel({ tripParams, mode = 'active-sar' }: AnalysisPanel
               </span>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Crowd Flow Simulation */}
+      <div className="analysis-item">
+        <div className="analysis-row">
+          <span className={hasArea ? '' : 'muted'}>Crowd Flow</span>
+          <button className="run-btn" onClick={runCrowdFlow} disabled={!hasArea || crowdHook.loading}>
+            {crowdHook.loading ? '...' : 'Run'}
+          </button>
+          {crowdHook.result && <button className="clear-layer-btn" onClick={() => clearLayer('crowdFlow', crowdHook.clear)}>✕</button>}
+        </div>
+        <p className="analysis-hint muted">
+          Terrain-driven crowd simulation. Agents follow slope gradients, density pressure, and crowd-type behavior.
+        </p>
+        <div className="rest-mode-toggle">
+          {(['evacuation', 'festival', 'hiking-group', 'panic'] as const).map((t) => (
+            <button
+              key={t}
+              className={`mode-btn ${crowdType === t ? 'active' : ''}`}
+              onClick={() => setCrowdType(t)}
+            >
+              {t === 'hiking-group' ? 'hiking' : t}
+            </button>
+          ))}
+        </div>
+        <div className="rainfall-slider">
+          <label className="param-label">Agents: {agentCount}</label>
+          <input
+            type="range"
+            min="50"
+            max="500"
+            step="50"
+            value={agentCount}
+            onChange={(e) => setAgentCount(parseInt(e.target.value))}
+          />
+        </div>
+        {crowdHook.error && <p className="analysis-error">{crowdHook.error}</p>}
+        {crowdHook.result && (
+          <p className="analysis-result">
+            {crowdHook.result.timesteps.length} frames | {crowdHook.result.bottlenecks.length} bottlenecks | {crowdHook.result.congregationZones.length} congregation zones | {crowdHook.result.flowCorridors.length} flow corridors
+          </p>
         )}
       </div>
 

@@ -11,19 +11,29 @@ let mainWindow: BrowserWindow | null = null
 let climateCleanup: (() => void) | null = null
 let climatePaused = false
 
-// --- macOS memory & power optimisations for portable rigs ---
+// --- Platform-aware memory tiers ---
+// macOS (portable rigs): conservative — Ollama models share system RAM
+// Windows (desktop rigs): generous — analysis tools need headroom for
+//   large DEM grids, crowd simulations, and prediction engine data
 const isMac = process.platform === 'darwin'
 const totalMemMB = Math.round(os.totalmem() / (1024 * 1024))
 const isLowMem = totalMemMB <= 16384 // <=16 GB = "portable" tier
+
+// Heap limits by platform + memory tier:
+//   Mac low-mem:  384 MB  (MacBook Air, 8-16 GB, Ollama shares RAM)
+//   Mac high-mem: 6144 MB (MacBook Pro, 32+ GB)
+//   Win low-mem:  2048 MB (16 GB desktop — enough for analysis + data)
+//   Win high-mem: 4096 MB (32+ GB desktop — full headroom)
+const heapLimit = isMac
+  ? (isLowMem ? 384 : 6144)
+  : (isLowMem ? 2048 : 4096)
+app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${heapLimit}`)
 
 if (isMac) {
   // Force integrated GPU on dual-GPU MacBook Pros to save VRAM + battery
   app.commandLine.appendSwitch('force_low_power_gpu')
   // Disable GPU sandbox (reduces overhead on macOS)
   app.commandLine.appendSwitch('disable-gpu-sandbox')
-  // Limit V8 heap -- 7B Ollama models already consume ~5-8 GB RAM
-  const heapLimit = isLowMem ? 384 : 6144
-  app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${heapLimit}`)
   // Reduce renderer process count (one per site is overkill for a single-origin app)
   app.commandLine.appendSwitch('process-per-site')
   // Disable expensive Chromium features we don't need

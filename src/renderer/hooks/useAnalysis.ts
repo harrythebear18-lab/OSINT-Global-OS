@@ -29,6 +29,8 @@ import type {
   SentinelResponse,
   CanopyAnalysisRequest,
   CanopyAnalysisResponse,
+  CrowdFlowRequest,
+  CrowdFlowResponse,
   ImportResult,
   RadarData,
   WeatherResponse,
@@ -398,6 +400,30 @@ export function useCanopy() {
       return res
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Canopy analysis failed')
+      return null
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const clear = useCallback(() => setResult(null), [])
+  return { loading, error, result, run, clear }
+}
+
+export function useCrowdFlow() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<CrowdFlowResponse | null>(null)
+
+  const run = useCallback(async (req: CrowdFlowRequest) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await window.terrain.crowdFlow(req)
+      setResult(res)
+      return res
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Crowd flow simulation failed')
       return null
     } finally {
       setLoading(false)

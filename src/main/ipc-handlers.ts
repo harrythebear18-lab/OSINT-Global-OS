@@ -46,6 +46,8 @@ import type {
   SentinelResponse,
   CanopyAnalysisRequest,
   CanopyAnalysisResponse,
+  CrowdFlowRequest,
+  CrowdFlowResponse,
   ImportResult,
   RadarData,
   WeatherResponse,
@@ -64,6 +66,7 @@ import { toGeoJSON, toKML } from './services/export-service'
 import { fetchWaterFeatures } from './services/water-service'
 import { searchSentinelScenes } from './services/sentinel-service'
 import { analyzeCanopy } from './services/canopy-service'
+import { simulateCrowdFlow } from './services/crowd-flow-service'
 import { parseKmlFile } from './services/import-service'
 import { fetchRadarData, fetchWeather } from './services/weather-service'
 import { lngLatToTile, DEFAULT_ZOOM } from './services/dem-tiles'
@@ -220,6 +223,14 @@ async function canopyAnalysis(req: CanopyAnalysisRequest): Promise<CanopyAnalysi
 }
 
 /* ------------------------------------------------------------------ */
+/* Crowd Flow Simulation                                              */
+/* ------------------------------------------------------------------ */
+
+async function crowdFlowAnalysis(req: CrowdFlowRequest): Promise<CrowdFlowResponse> {
+  return simulateCrowdFlow(req)
+}
+
+/* ------------------------------------------------------------------ */
 /* Import KML / KMZ                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -323,6 +334,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.WATER_FETCH, safeHandle(waterFetch))
   ipcMain.handle(IPC.SENTINEL_SEARCH, safeHandle(sentinelSearch))
   ipcMain.handle(IPC.CANOPY_ANALYSIS, safeHandle(canopyAnalysis))
+  ipcMain.handle(IPC.CROWD_FLOW_ANALYSIS, safeHandle(crowdFlowAnalysis))
   ipcMain.handle(IPC.IMPORT_KML, safeHandle(importKml))
   ipcMain.handle(IPC.CLEAR_CACHE, safeHandle(clearCache))
   ipcMain.handle(IPC.EXPORT_PNG, safeHandle(exportPng))

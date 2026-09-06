@@ -82,6 +82,14 @@ interface AnalysisResults {
   imported?: {
     features: { id: string; name: string; type: 'point' | 'line' | 'polygon'; coords: { lng: number; lat: number }[]; styleColor?: string }[]
   }
+  crowdFlow?: {
+    timesteps: { agents: { lng: number; lat: number; fatigue: number; speed: number; leader: boolean }[]; maxDensity: number }[]
+    bottlenecks: { id: string; coords: { lng: number; lat: number }[]; severity: number; flowRate: number; reason: string }[]
+    congregationZones: { id: string; coords: { lng: number; lat: number }[]; density: number; estimatedCount: number; type: string }[]
+    flowCorridors: { id: string; coords: { lng: number; lat: number }[]; volume: number; direction: number }[]
+    agentCount: number
+    crowdType: string
+  }
 }
 
 let sharedResults: AnalysisResults = {}
@@ -142,6 +150,7 @@ export function MapOverlays() {
         sentinel:        { layers: ['sentinel-imagery-layer'], sources: ['sentinel-imagery'] },
         canopy:          { layers: ['canopy-zones-fill', 'canopy-zones-outline'], sources: ['canopy-zones'] },
         imported:        { layers: ['import-points-circle', 'import-lines-layer', 'import-polys-fill', 'import-polys-outline'], sources: ['imported-features'] },
+        crowdFlow:       { layers: ['crowd-agents', 'crowd-bottlenecks-fill', 'crowd-bottlenecks-outline', 'crowd-congregation-fill', 'crowd-congregation-outline', 'crowd-corridors'], sources: ['crowd-agents', 'crowd-bottlenecks', 'crowd-congregation', 'crowd-corridors'] },
       }
       const entry = layerMap[key]
       if (!entry) return
@@ -899,11 +908,154 @@ export function MapOverlays() {
           }
         }
       }
-    }
 
+      // --- Crowd Flow: bottlenecks + congregation + corridors + animated agents ---
+      if (results.crowdFlow) {
+        const cf = results.crowdFlow
+
+        // Bottlenecks
+        if (cf.bottlenecks.length > 0) {
+          const features: Feature<Polygon>[] = cf.bottlenecks.map((b) => ({
+            type: 'Feature',
+            properties: { severity: b.severity },
+            geometry: { type: 'Polygon', coordinates: [b.coords.map((c) => [c.lng, c.lat])] },
+          }))
+          if (map.getSource('crowd-bottlenecks')) {
+            ;(map.getSource('crowd-bottlenecks') as maplibregl.GeoJSONSource).setData({ type: 'FeatureCollection', features })
+          } else {
+            map.addSource('crowd-bottlenecks', { type: 'geojson', data: { type: 'FeatureCollection', features } })
+            map.addLayer({
+              id: 'crowd-bottlenecks-fill',
+              type: 'fill',
+              source: 'crowd-bottlenecks',
+              paint: {
+                'fill-color': '#ff3300',
+                'fill-opacity': ['interpolate', ['linear'], ['get', 'severity'], 0.3, 0.2, 1.0, 0.5],
+              },
+            })
+            map.addLayer({
+              id: 'crowd-bottlenecks-outline',
+              type: 'line',
+              source: 'crowd-bottlenecks',
+              paint: { 'line-color': '#ff3300', 'line-width': 2, 'line-opacity': 0.7 },
+            })
+          }
+        }
+
+        // Congregation zones
+        if (cf.congregationZones.length > 0) {
+          const features: Feature<Polygon>[] = cf.congregationZones.map((z) => ({
+            type: 'Feature',
+            properties: { density: z.density, type: z.type, count: z.estimatedCount },
+            geometry: { type: 'Polygon', coordinates: [z.coords.map((c) => [c.lng, c.lat])] },
+          }))
+          if (map.getSource('crowd-congregation')) {
+            ;(map.getSource('crowd-congregation') as maplibregl.GeoJSONSource).setData({ type: 'FeatureCollection', features })
+          } else {
+            map.addSource('crowd-congregation', { type: 'geojson', data: { type: 'FeatureCollection', features } })
+            map.addLayer({
+              id: 'crowd-congregation-fill',
+              type: 'fill',
+              source: 'crowd-congregation',
+              paint: {
+                'fill-color': ['match', ['get', 'type'], 'trapped', '#ff0000', 'converge', '#ff8800', 'rest', '#00aaff', 'dispersal', '#00ff88', '#888'],
+                'fill-opacity': ['interpolate', ['linear'], ['get', 'density'], 0, 0.1, 1, 0.4],
+              },
+            })
+            map.addLayer({
+              id: 'crowd-congregation-outline',
+              type: 'line',
+              source: 'crowd-congregation',
+              paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0.4 },
+            })
+          }
+        }
+
+        // Flow corridors
+        if (cf.flowCorridors.length > 0) {
+          const features: Feature[] = cf.flowCorridors.map((c) => ({
+            type: 'Feature' as const,
+            properties: { volume: c.volume },
+            geometry: { type: 'LineString' as const, coordinates: c.coords.map((p) => [p.lng, p.lat]) },
+          }))
+          if (map.getSource('crowd-corridors')) {
+            ;(map.getSource('crowd-corridors') as maplibregl.GeoJSONSource).setData({ type: 'FeatureCollection', features })
+          } else {
+            map.addSource('crowd-corridors', { type: 'geojson', data: { type: 'FeatureCollection', features } })
+            map.addLayer({
+              id: 'crowd-corridors',
+              type: 'line',
+              source: 'crowd-corridors',
+              paint: {
+                'line-color': '#00ffff',
+                'line-width': ['interpolate', ['linear'], ['get', 'volume'], 0.1, 1, 1, 4],
+                'line-opacity': 0.5,
+              },
+            })
+          }
+        }
+
+        // Animated agents — render first timestep, animation effect cycles through them
+        if (cf.timesteps.length > 0) {
+          const ts = cf.timesteps[0]
+          const features: Feature<Point>[] = ts.agents.map((a, i) => ({
+            type: 'Feature',
+            properties: { leader: a.leader, idx: i },
+            geometry: { type: 'Point', coordinates: [a.lng, a.lat] },
+          }))
+          if (map.getSource('crowd-agents')) {
+            ;(map.getSource('crowd-agents') as maplibregl.GeoJSONSource).setData({ type: 'FeatureCollection', features })
+          } else {
+            map.addSource('crowd-agents', { type: 'geojson', data: { type: 'FeatureCollection', features } })
+            map.addLayer({
+              id: 'crowd-agents',
+              type: 'circle',
+              source: 'crowd-agents',
+              paint: {
+                'circle-radius': ['match', ['get', 'leader'], true, 5, 3],
+                'circle-color': ['match', ['get', 'leader'], true, '#ffdd00', '#00ddff'],
+                'circle-stroke-color': '#fff',
+                'circle-stroke-width': 1,
+                'circle-opacity': 0.8,
+              },
+            })
+          }
+        }
+      }
+
+    }
     window.addEventListener('terrain:analysis-results', renderOverlays)
     return () => window.removeEventListener('terrain:analysis-results', renderOverlays)
   }, [map])
+
+  // ── Crowd flow agent animation ──
+  // Cycles through recorded timesteps, updating agent dot positions.
+  useEffect(() => {
+    if (!map) return
+    const cf = sharedResults.crowdFlow
+    if (!cf || cf.timesteps.length === 0) return
+
+    let frame = 0
+    let timer: ReturnType<typeof setInterval>
+
+    const updateAgents = () => {
+      const ts = cf.timesteps[frame % cf.timesteps.length]
+      const source = map.getSource('crowd-agents') as maplibregl.GeoJSONSource | undefined
+      if (!source) return
+      const features = ts.agents.map((a, i) => ({
+        type: 'Feature' as const,
+        properties: { leader: a.leader, idx: i },
+        geometry: { type: 'Point' as const, coordinates: [a.lng, a.lat] },
+      }))
+      source.setData({ type: 'FeatureCollection', features })
+      frame++
+    }
+
+    // Start animation at ~10 fps
+    timer = setInterval(updateAgents, 100)
+
+    return () => clearInterval(timer)
+  }, [map, sharedResults.crowdFlow])
 
   return null
 }

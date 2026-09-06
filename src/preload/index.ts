@@ -39,6 +39,8 @@ import type {
   SentinelResponse,
   CanopyAnalysisRequest,
   CanopyAnalysisResponse,
+  CrowdFlowRequest,
+  CrowdFlowResponse,
   ImportResult,
   RadarData,
   WeatherResponse,
@@ -80,6 +82,8 @@ const terrain = {
     ipcRenderer.invoke(IPC.SENTINEL_SEARCH, req),
   canopyAnalysis: (req: CanopyAnalysisRequest): Promise<CanopyAnalysisResponse> =>
     ipcRenderer.invoke(IPC.CANOPY_ANALYSIS, req),
+  crowdFlow: (req: CrowdFlowRequest): Promise<CrowdFlowResponse> =>
+    ipcRenderer.invoke(IPC.CROWD_FLOW_ANALYSIS, req),
   importKml: (): Promise<ImportResult | null> =>
     ipcRenderer.invoke(IPC.IMPORT_KML),
   clearCache: (): Promise<{ cleared: boolean }> =>

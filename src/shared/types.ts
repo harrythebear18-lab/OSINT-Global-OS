@@ -905,3 +905,83 @@ export interface RestPoint {
 export interface RestPointsResponse {
   points: RestPoint[];
 }
+
+// ─── Crowd Flow Simulation ───────────────────────────────────────────
+
+export type CrowdType = 'evacuation' | 'festival' | 'hiking-group' | 'panic';
+
+export interface CrowdFlowRequest {
+  bounds: [LngLat, LngLat];
+  /** Source points where agents spawn. If empty, uses LKP or bbox edges. */
+  sourcePoints?: LngLat[];
+  /** Optional destination (evacuation exit, event site, etc.) */
+  destination?: LngLat;
+  /** Number of simulated agents. Default: 200, max: 500. */
+  agentCount?: number;
+  /** Simulation timesteps. Default: 100, max: 200. */
+  timesteps?: number;
+  /** Crowd behavior type. */
+  crowdType?: CrowdType;
+  /** Trip params for fatigue model. */
+  tripParams?: TripParams;
+  /** Analysis mode. */
+  mode?: AnalysisMode;
+}
+
+export interface AgentState {
+  lng: number;
+  lat: number;
+  /** 0-1 fatigue level. */
+  fatigue: number;
+  /** Current speed in m/s. */
+  speed: number;
+  /** Whether this agent is a leader. */
+  leader: boolean;
+}
+
+export interface CrowdTimestep {
+  agents: AgentState[];
+  /** Max density value this timestep (for color scaling). */
+  maxDensity: number;
+}
+
+export interface CrowdBottleneck {
+  id: string;
+  coords: { lng: number; lat: number }[];
+  /** 0-1 severity — higher = more dangerous bottleneck. */
+  severity: number;
+  /** Estimated flow rate (agents per timestep through this bottleneck). */
+  flowRate: number;
+  reason: string;
+}
+
+export interface CrowdCongregationZone {
+  id: string;
+  coords: { lng: number; lat: number }[];
+  /** 0-1 density — higher = more people聚集. */
+  density: number;
+  /** Estimated number of people. */
+  estimatedCount: number;
+  type: 'rest' | 'converge' | 'trapped' | 'dispersal';
+}
+
+export interface CrowdFlowCorridor {
+  id: string;
+  coords: { lng: number; lat: number }[];
+  /** 0-1 volume — higher = more flow. */
+  volume: number;
+  /** Average direction in degrees (0=North). */
+  direction: number;
+}
+
+export interface CrowdFlowResponse {
+  /** All timesteps for animation. */
+  timesteps: CrowdTimestep[];
+  bottlenecks: CrowdBottleneck[];
+  congregationZones: CrowdCongregationZone[];
+  flowCorridors: CrowdFlowCorridor[];
+  bounds: [LngLat, LngLat];
+  agentCount: number;
+  timestepsCount: number;
+  crowdType: CrowdType;
+}

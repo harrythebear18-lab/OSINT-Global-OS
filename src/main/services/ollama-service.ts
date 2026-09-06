@@ -16,11 +16,13 @@ import type { LngLat } from '@shared/types'
 
 const OLLAMA_BASE = 'http://localhost:11434'
 
-// --- RAM optimisation: limit Ollama context window on low-memory rigs ---
+// --- RAM optimisation: limit Ollama context window on low-memory Macs ---
+// Windows desktops have dedicated RAM and can afford full context windows.
 const _totalMemMB = Math.round(require('os').totalmem() / (1024 * 1024))
-const _isLowMem = _totalMemMB <= 16384
-const NUM_CTX = _isLowMem ? 2048 : 4096
-const KEEP_ALIVE = _isLowMem ? '2m' : '5m'
+const _isMac = process.platform === 'darwin'
+const _isLowMemMac = _isMac && _totalMemMB <= 16384
+const NUM_CTX = _isLowMemMac ? 2048 : 4096
+const KEEP_ALIVE = _isLowMemMac ? '2m' : '5m'
 
 export interface OllamaModel {
   name: string
