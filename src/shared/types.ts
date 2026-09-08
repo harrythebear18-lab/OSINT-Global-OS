@@ -126,6 +126,7 @@ export interface CurrentWeather {
   windSpeed: number
   windDir: number
   precipitation: number
+  pressure: number
   weatherCode: number
   isDay: boolean
 }

@@ -368,7 +368,9 @@ function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> })
 
  <strong>{forecast.result.current.temperature.toFixed(0)}\u00B0C</strong>
 
- <span className="rip-muted"> (feels {forecast.result.current.apparentTemp.toFixed(0)}\u00B0C)</span>
+ <span className="rp-forecast-temp-f"> ({(forecast.result.current.temperature * 9 / 5 + 32).toFixed(0)}\u00B0F)</span>
+
+ <span className="rip-muted"> \u2014 feels {forecast.result.current.apparentTemp.toFixed(0)}\u00B0C / {(forecast.result.current.apparentTemp * 9 / 5 + 32).toFixed(0)}\u00B0F</span>
 
  </div>
 
@@ -376,7 +378,13 @@ function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> })
 
  <div className="rp-forecast-meta">
 
- Wind {forecast.result.current.windSpeed.toFixed(0)} km/h \u00B7 Humidity {forecast.result.current.humidity.toFixed(0)}% \u00B7 Precip {forecast.result.current.precipitation.toFixed(1)}mm
+ <span>Wind {forecast.result.current.windSpeed.toFixed(0)} km/h</span>
+
+ <span>Humidity {forecast.result.current.humidity.toFixed(0)}%</span>
+
+ <span>Pressure {forecast.result.current.pressure.toFixed(0)} hPa</span>
+
+ <span>Rain {forecast.result.current.precipitation.toFixed(1)}mm</span>
 
  </div>
 
@@ -384,11 +392,27 @@ function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> })
 
  <div className="rp-forecast-hourly">
 
- {forecast.result.hourly.slice(0, 12).map((h, i) => (
+ <div className="rp-fh-header">
+
+ <span className="rp-fh-time">Time</span>
+
+ <span className="rp-fh-temp">Temp</span>
+
+ <span className="rp-fh-precip">Rain</span>
+
+ </div>
+
+ {forecast.result.hourly.slice(0, 12).map((h, i) => {
+
+ const dt = new Date(h.time)
+
+ const label = dt.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true })
+
+ return (
 
  <div key={i} className="rp-forecast-hour">
 
- <span className="rp-fh-time">{h.time}</span>
+ <span className="rp-fh-time">{label}</span>
 
  <span className="rp-fh-temp">{(h.temp ?? 0).toFixed(0)}\u00B0</span>
 
@@ -396,7 +420,9 @@ function WeatherTab({ climate }: { climate: ReturnType<typeof useClimateData> })
 
  </div>
 
- ))}
+ )
+
+ })}
 
  </div>
 

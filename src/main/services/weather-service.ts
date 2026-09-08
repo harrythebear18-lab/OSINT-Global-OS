@@ -71,6 +71,7 @@ export interface CurrentWeather {
   windSpeed: number
   windDir: number
   precipitation: number
+  pressure: number
   weatherCode: number
   isDay: boolean
 }
@@ -94,7 +95,7 @@ export async function fetchWeather(point: LngLat): Promise<WeatherResponse> {
   const params = new URLSearchParams({
     latitude: point.lat.toString(),
     longitude: point.lng.toString(),
-    'current': 'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation,weather_code,is_day',
+    'current': 'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation,surface_pressure,weather_code,is_day',
     'hourly': 'temperature_2m,precipitation_probability,precipitation,wind_speed_10m,weather_code',
     'forecast_hours': '24',
     'timezone': 'auto',
@@ -111,6 +112,7 @@ export async function fetchWeather(point: LngLat): Promise<WeatherResponse> {
     windSpeed: data.current?.wind_speed_10m ?? 0,
     windDir: data.current?.wind_direction_10m ?? 0,
     precipitation: data.current?.precipitation ?? 0,
+    pressure: data.current?.surface_pressure ?? 0,
     weatherCode: data.current?.weather_code ?? 0,
     isDay: data.current?.is_day === 1,
   }
