@@ -11,6 +11,13 @@ import { PredictionEngine } from './predictionEngine';
 
 const STALE_DATA_MINUTES = 120;
 
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 const SOURCE_EXPECTED_INTERVAL_MS: Record<DataSource, number> = {
   NOAA_NDBC: 10 * 60 * 1000,
   ARGO: 10 * 24 * 60 * 60 * 1000,
@@ -298,20 +305,20 @@ export class ClimateMonitor {
     this.applyInvalidation(allStations, allMeasurements, crossVerifications);
 
     const [storms, lightning, vessels, aircraft, earthquakes, spaceWeather, wildfires] = await Promise.all([
-      StormFetcher.fetchActiveStorms(),
-      LightningFetcher.fetchRecent(),
-      VesselFetcher.fetchVessels(),
-      AircraftFetcher.fetchAircraft(),
-      SeismicFetcher.fetchRecent(),
-      SpaceWeatherFetcher.fetch(),
-      WildfireFetcher.fetchRecent(),
+      withTimeout(StormFetcher.fetchActiveStorms(), 15000, []),
+      withTimeout(LightningFetcher.fetchRecent(), 15000, []),
+      withTimeout(VesselFetcher.fetchVessels(), 15000, []),
+      withTimeout(AircraftFetcher.fetchAircraft(), 15000, []),
+      withTimeout(SeismicFetcher.fetchRecent(), 15000, []),
+      withTimeout(SpaceWeatherFetcher.fetch(), 15000, undefined),
+      withTimeout(WildfireFetcher.fetchRecent(), 15000, []),
     ]);
     this.lastStorms = storms;
     this.lastLightning = lightning;
     this.lastVessels = vessels;
     this.lastAircraft = aircraft;
     this.lastEarthquakes = earthquakes;
-    this.lastSpaceWeather = spaceWeather;
+    this.lastSpaceWeather = spaceWeather ?? null;
     this.lastWildfires = wildfires;
 
     const summary = this.computeIntegritySummary(sensorHealth, dataFlowResults, crossVerifications);

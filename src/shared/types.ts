@@ -907,83 +907,58 @@ export interface RestPointsResponse {
   points: RestPoint[];
 }
 
-// ─── Behavior Engine (portable UEBS2-style terrain behavior simulation) ──
+/* ------------------------------------------------------------------ */
+/* Behavior Engine                                                     */
+/* ------------------------------------------------------------------ */
 
 export interface BehaviorEngineRequest {
   bounds: [LngLat, LngLat];
-  /** Source points where agents originate. Falls back to LKP or bbox center. */
   sourcePoints?: LngLat[];
-  /** Destination the group is heading toward (if any). */
   destination?: LngLat;
-  /** Number of agents to simulate. Default: 100, max: 500. */
   agentCount?: number;
-  /** Simulation timesteps. Default: 80, max: 150. */
   timesteps?: number;
-  /** Trip parameters for fatigue model. */
   tripParams?: TripParams;
-  /** Analysis mode. */
-  mode?: AnalysisMode;
-  /** Whether to use existing hazard layers (slope, fall risk, water) for avoidance. Default: true. */
+  mode?: string;
   useHazards?: boolean;
 }
 
-/** A predicted group path through terrain. */
 export interface BehaviorPath {
   id: string;
-  coords: { lng: number; lat: number }[];
-  /** 0-1 confidence in this path. */
+  coords: LngLat[];
   confidence: number;
-  /** Estimated travel time in hours. */
   estimatedHours: number;
-  /** Number of agents likely to take this path. */
   agentCount: number;
-  /** Path type. */
-  type: 'primary' | 'alternate' | 'split' | 'flee';
+  type: 'primary' | 'alternate';
 }
 
-/** A decision point — where the group splits, merges, stops, or funnels. */
 export interface BehaviorDecisionPoint {
   id: string;
   lng: number;
   lat: number;
-  /** What happens here. */
-  type: 'split' | 'merge' | 'rest' | 'funnel' | 'obstacle' | 'destination';
-  /** 0-1 significance. */
+  type: 'funnel' | 'rest' | 'obstacle' | 'split' | 'destination';
   significance: number;
-  /** Human-readable reason. */
   reason: string;
-  /** Number of agents affected. */
   agentCount: number;
 }
 
-/** A density zone — where pressure builds up. */
 export interface BehaviorDensityZone {
   id: string;
-  coords: { lng: number; lat: number }[];
-  /** 0-1 density. */
+  coords: LngLat[];
   density: number;
-  /** Estimated agent count. */
   estimatedCount: number;
-  /** Type of density zone. */
-  type: 'bottleneck' | 'congregation' | 'dispersal' | 'trapped';
+  type: 'congregation' | 'bottleneck' | 'dispersal';
 }
 
-/** A probability field cell — likelihood of agent presence. */
 export interface BehaviorProbabilityCell {
   lng: number;
   lat: number;
-  /** 0-1 probability of agent presence at end of simulation. */
   probability: number;
 }
 
 export interface BehaviorEngineResponse {
-  /** Predicted paths the group would take. */
   paths: BehaviorPath[];
-  /** Decision points along the paths. */
   decisionPoints: BehaviorDecisionPoint[];
-  /** Density zones where pressure builds. */
   densityZones: BehaviorDensityZone[];
-  /** Probability field — grid cells with presence likelihood. */
   probabilityField: BehaviorProbabilityCell[];
   bounds: [LngLat, LngLat];
   agentCount: number;
